@@ -108,7 +108,7 @@ export default function ReportsPage() {
         </Card>
         <Card className="bg-white border shadow-sm">
           <CardHeader className="pb-2">
-            <CardDescription className="text-xs uppercase font-bold tracking-wider">New Resellers</CardTitle>
+            <CardDescription className="text-xs uppercase font-bold tracking-wider">New Resellers</CardDescription>
             <CardTitle className="text-2xl">12</CardTitle>
           </CardHeader>
           <CardContent>
