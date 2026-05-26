@@ -1,3 +1,22 @@
 {
-  "placeholderImages": []
+  "placeholderImages": [
+    {
+      "id": "hero-wholesale",
+      "description": "Wholesale warehouse with boxes and inventory.",
+      "imageUrl": "https://picsum.photos/seed/nexus1/1200/600",
+      "imageHint": "wholesale warehouse"
+    },
+    {
+      "id": "product-box",
+      "description": "Cardboard boxes for bulk orders.",
+      "imageUrl": "https://picsum.photos/seed/nexus2/400/400",
+      "imageHint": "shipping box"
+    },
+    {
+      "id": "admin-avatar",
+      "description": "Professional admin user avatar.",
+      "imageUrl": "https://picsum.photos/seed/nexus3/100/100",
+      "imageHint": "professional person"
+    }
+  ]
 }
