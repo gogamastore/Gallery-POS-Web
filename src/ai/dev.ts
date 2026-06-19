@@ -1,4 +1,5 @@
 import { config } from 'dotenv';
 config();
 
-import '@/ai/flows/ai-sales-and-market-insights-flow.ts';
+import '@/ai/flows/smart-product-summary.ts';
+import '@/ai/flows/suggest-optimal-stock-levels';
