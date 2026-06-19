@@ -1,4 +1,3 @@
-
 "use client";
 
 import {
@@ -8,11 +7,29 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Banknote, Users, Contact, LayoutTemplate, Percent, TrendingUp, Building, LayoutGrid } from "lucide-react";
+import {
+  Banknote,
+  Users,
+  Contact,
+  LayoutTemplate,
+  Percent,
+  TrendingUp,
+  Building,
+  LayoutGrid,
+  MapPinHouse,        // ← ikon untuk Alamat Toko
+} from "lucide-react";
 import Link from "next/link";
 
 
 const settingsCards = [
+  // ── BARU: Alamat Toko — ditaruh paling atas karena penting untuk Biteship ──
+  {
+    title: "Alamat Toko",
+    description: "Atur lokasi, koordinat GPS, dan Area Biteship sebagai titik asal pengiriman.",
+    icon: MapPinHouse,
+    href: "/dashboard/settings/store-address",
+    highlight: true,  // tampilkan dengan styling berbeda
+  },
   {
     title: "Rekening Bank",
     description: "Kelola rekening bank untuk pembayaran via transfer.",
@@ -37,7 +54,7 @@ const settingsCards = [
     icon: Building,
     href: "/dashboard/settings/suppliers",
   },
-   {
+  {
     title: "Kategori Produk",
     description: "Atur kategori untuk pengelompokan produk Anda.",
     icon: LayoutGrid,
@@ -61,7 +78,7 @@ const settingsCards = [
     icon: Percent,
     href: "/dashboard/settings/promo",
   },
-   {
+  {
     title: "Produk Trending",
     description: "Atur produk yang akan ditampilkan sebagai produk terlaris.",
     icon: TrendingUp,
@@ -80,27 +97,45 @@ export default function SettingsPage() {
             Kelola pengaturan umum untuk toko Anda di sini.
           </CardDescription>
         </CardHeader>
-      </Card>
-      
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {settingsCards.map((card) => (
-          <Card key={card.title} className="flex flex-col">
-            <CardHeader className="flex-1">
-                <div className="flex items-start justify-between">
-                    <CardTitle className="text-lg font-medium">{card.title}</CardTitle>
-                    <card.icon className="h-6 w-6 text-muted-foreground" />
-                </div>
-              <CardDescription>{card.description}</CardDescription>
-            </CardHeader>
-            <CardContent>
-                <Link href={card.href} className="text-sm font-medium text-primary hover:underline">
-                    Buka Pengaturan &rarr;
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {settingsCards.map((card) => {
+              const Icon = card.icon;
+              return (
+                <Link key={card.href} href={card.href}>
+                  <Card
+                    className={`hover:shadow-md transition-all cursor-pointer h-full ${
+                      card.highlight
+                        ? "border-blue-200 bg-blue-50/50 hover:border-blue-400"
+                        : "hover:border-primary/50"
+                    }`}
+                  >
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={`p-2 rounded-lg ${
+                            card.highlight
+                              ? "bg-blue-100 text-blue-600"
+                              : "bg-muted text-muted-foreground"
+                          }`}
+                        >
+                          <Icon className="h-5 w-5" />
+                        </div>
+                        <CardTitle className="text-base">{card.title}</CardTitle>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <CardDescription className="text-sm">
+                        {card.description}
+                      </CardDescription>
+                    </CardContent>
+                  </Card>
                 </Link>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
