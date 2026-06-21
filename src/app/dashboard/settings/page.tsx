@@ -16,19 +16,19 @@ import {
   TrendingUp,
   Building,
   LayoutGrid,
-  MapPinHouse,        // ← ikon untuk Alamat Toko
+  MapPin,
 } from "lucide-react";
 import Link from "next/link";
 
-
 const settingsCards = [
-  // ── BARU: Alamat Toko — ditaruh paling atas karena penting untuk Biteship ──
+  // ── Baru: Alamat Toko / Origin Biteship ─────────────────────
   {
     title: "Alamat Toko",
-    description: "Atur lokasi, koordinat GPS, dan Area Biteship sebagai titik asal pengiriman.",
-    icon: MapPinHouse,
+    description:
+      "Atur lokasi toko sebagai titik asal pickup Biteship. Termasuk Origin Area ID dan koordinat GPS untuk kurir instan.",
+    icon: MapPin,
     href: "/dashboard/settings/store-address",
-    highlight: true,  // tampilkan dengan styling berbeda
+    highlight: true, // tampil lebih menonjol
   },
   {
     title: "Rekening Bank",
@@ -86,7 +86,6 @@ const settingsCards = [
   },
 ];
 
-
 export default function SettingsPage() {
   return (
     <div className="space-y-6">
@@ -98,36 +97,36 @@ export default function SettingsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {settingsCards.map((card) => {
               const Icon = card.icon;
               return (
                 <Link key={card.href} href={card.href}>
                   <Card
-                    className={`hover:shadow-md transition-all cursor-pointer h-full ${
+                    className={`h-full cursor-pointer transition-colors hover:bg-accent ${
                       card.highlight
-                        ? "border-blue-200 bg-blue-50/50 hover:border-blue-400"
-                        : "hover:border-primary/50"
+                        ? "border-primary/40 bg-primary/5 dark:bg-primary/10"
+                        : ""
                     }`}
                   >
-                    <CardHeader className="pb-2">
-                      <div className="flex items-center gap-3">
-                        <div
-                          className={`p-2 rounded-lg ${
-                            card.highlight
-                              ? "bg-blue-100 text-blue-600"
-                              : "bg-muted text-muted-foreground"
-                          }`}
-                        >
-                          <Icon className="h-5 w-5" />
-                        </div>
-                        <CardTitle className="text-base">{card.title}</CardTitle>
+                    <CardHeader className="flex flex-row items-center gap-3 space-y-0 pb-2">
+                      <div
+                        className={`p-2 rounded-md ${
+                          card.highlight
+                            ? "bg-primary/15 text-primary"
+                            : "bg-muted"
+                        }`}
+                      >
+                        <Icon className="h-5 w-5" />
                       </div>
+                      <CardTitle className="text-sm font-semibold">
+                        {card.title}
+                      </CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <CardDescription className="text-sm">
+                      <p className="text-xs text-muted-foreground">
                         {card.description}
-                      </CardDescription>
+                      </p>
                     </CardContent>
                   </Card>
                 </Link>
