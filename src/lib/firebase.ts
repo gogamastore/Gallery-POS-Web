@@ -3,6 +3,7 @@ import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { getMessaging } from "firebase/messaging";
+import { getFunctions } from 'firebase/functions';
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyDIl-RgVHblRZx-MZHlhRWEOK90iw6eEyI",
@@ -20,6 +21,7 @@ const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
+const functions = getFunctions(app, 'asia-southeast1');
 const messaging = typeof window !== 'undefined' ? getMessaging(app) : null;
 
-export { app, auth, db, storage, messaging };
+export { app, auth, db, storage, functions, messaging };

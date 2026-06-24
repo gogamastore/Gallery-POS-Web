@@ -25,3 +25,9 @@ env:
     value: "1:889047904404:web:e681227fb498239fa5c481"
   - variable: NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID
     value: G-SYMNEX7VYL
+  - variable: NEXT_PUBLIC_MIDTRANS_CLIENT_KEY
+    value: Mid-client-CZPmZ0nFggZaf_oi
+  - variable: NEXT_PUBLIC_MIDTRANS_IS_PRODUCTION
+    value: "true"
+  - variable: NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
+    value: AIzaSyCMHbCIOjAIFbOs8VcT_wwWiLdz4BL65_A
