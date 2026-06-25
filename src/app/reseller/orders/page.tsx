@@ -250,7 +250,6 @@ function OrderCard({ order }: { order: Order }) {
 
 const TABS = [
   { key: "pending_payment", label: "Belum Bayar" },
-  { key: "pending",         label: "Belum Proses" },
   { key: "processing",      label: "Diproses" },
   { key: "shipped",         label: "Dikirim" },
   { key: "delivered",       label: "Selesai" },
@@ -264,8 +263,6 @@ function filterOrders(orders: Order[], tabKey: TabKey): Order[] {
   switch (tabKey) {
     case "pending_payment":
       return orders.filter((o) => o.paymentStatus === "pending_payment");
-    case "pending":
-      return orders.filter((o) => ["pending"].includes(o.status));
     case "processing":
       return orders.filter((o) => o.status === "processing");
     case "shipped":
@@ -293,7 +290,6 @@ function EmptyState({ message }: { message: string }) {
 
 const EMPTY_MESSAGES: Record<TabKey, string> = {
   pending_payment: "Tidak ada pesanan yang menunggu pembayaran.",
-  pending:         "Tidak ada pesanan yang belum diproses.",
   processing:      "Tidak ada pesanan yang sedang diproses.",
   shipped:         "Tidak ada pesanan yang sedang dikirim.",
   delivered:       "Belum ada pesanan yang selesai.",

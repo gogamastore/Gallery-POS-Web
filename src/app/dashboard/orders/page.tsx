@@ -1,70 +1,116 @@
-
-
 "use client";
 
 import { useEffect, useState, useMemo, useCallback } from "react";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  CardFooter
-} from "@/components/ui/card"
+  Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter,
+} from "@/components/ui/card";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog"
-import { Download, CreditCard, CheckCircle, FileText, Printer, Truck, Check, Loader2, Edit, RefreshCw, XCircle, Trash2, Minus, Plus, PlusCircle, Search, Calendar as CalendarIcon, Eye, DollarSign, MessageSquare, MoreHorizontal, Package, User, ExternalLink, FileBox } from "lucide-react"
-import { collection, getDocs, doc, updateDoc, getDoc, query, orderBy, writeBatch, deleteDoc, serverTimestamp } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
+  DialogTrigger, DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
+  DropdownMenuSeparator, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { Separator } from "@/components/ui/separator";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Download, FileText, Printer, Loader2, Edit, XCircle, Trash2, Minus, Plus,
+  PlusCircle, Search, Calendar as CalendarIcon, DollarSign, MessageSquare,
+  MoreHorizontal, Package, User, ExternalLink, FileBox, Truck,
+  MapPin, AlertCircle,
+} from "lucide-react";
+import {
+  collection, doc, updateDoc, getDoc, query, orderBy, writeBatch, deleteDoc,
+  serverTimestamp, onSnapshot,
+} from "firebase/firestore";
+import { db, functions } from "@/lib/firebase";
+import { httpsCallable } from "firebase/functions";
 import { useToast } from "@/hooks/use-toast";
+import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
-import { format, startOfDay, endOfDay, subDays } from 'date-fns';
+import { format, subDays, startOfDay, endOfDay } from "date-fns";
 import type { DateRange } from "react-day-picker";
 import { id as dateFnsLocaleId } from "date-fns/locale";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
-import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { Separator } from "@/components/ui/separator";
-import { Label } from "@/components/ui/label";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
-
-declare module 'jspdf' {
-  interface jsPDF {
-    autoTable: (options: any) => jsPDF;
-  }
+declare module "jspdf" {
+  interface jsPDF { autoTable: (options: any) => jsPDF; }
 }
 
-interface Product {
-    id: string;
-    name: string;
-    sku: string;
-    price: string | number; // Allow both string and number
-    stock: number;
-    image: string;
-    'data-ai-hint'?: string;
-    purchasePrice?: number;
+// ── Firebase Functions ─────────────────────────────────────────────
+
+const createBiteshipOrderFn = httpsCallable<
+  { orderId: string },
+  { success: boolean; biteshipOrderId: string; waybillId?: string; trackingUrl?: string; status?: string }
+>(functions, "createBiteshipOrder");
+
+// ── Constants ──────────────────────────────────────────────────────
+
+const INSTANT_COURIER_CODES = [
+  "gojek", "grab", "grab_express", "gosend", "paxel", "lalamove", "borzo",
+];
+
+function isInstantCourier(code?: string) {
+  return INSTANT_COURIER_CODES.includes((code ?? "").toLowerCase());
 }
+
+// ── Badges ─────────────────────────────────────────────────────────
+
+function PaymentBadge({ status }: { status: string }) {
+  const s = (status ?? "").toLowerCase();
+  const map: Record<string, { label: string; cls: string }> = {
+    paid:            { label: "Lunas",       cls: "bg-green-100 text-green-700 border-green-300" },
+    settlement:      { label: "Lunas",       cls: "bg-green-100 text-green-700 border-green-300" },
+    pending_payment: { label: "Belum Bayar", cls: "bg-orange-100 text-orange-700 border-orange-300" },
+    cancelled:       { label: "Dibatalkan",  cls: "bg-red-100 text-red-700 border-red-300" },
+    failed:          { label: "Kadaluarsa",  cls: "bg-red-100 text-red-700 border-red-300" },
+    unpaid:          { label: "Belum Lunas", cls: "bg-yellow-100 text-yellow-700 border-yellow-300" },
+  };
+  const cfg = map[s] ?? { label: status, cls: "bg-gray-100 text-gray-700 border-gray-300" };
+  return (
+    <span className={`text-xs font-semibold px-2 py-0.5 rounded border ${cfg.cls}`}>
+      {cfg.label}
+    </span>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const s = (status ?? "").toLowerCase();
+  const map: Record<string, { label: string; cls: string }> = {
+    pending:    { label: "Menunggu",   cls: "bg-yellow-100 text-yellow-700 border-yellow-300" },
+    processing: { label: "Diproses",  cls: "bg-blue-100 text-blue-700 border-blue-300" },
+    shipped:    { label: "Dikirim",   cls: "bg-cyan-100 text-cyan-700 border-cyan-300" },
+    dikirim:    { label: "Dikirim",   cls: "bg-cyan-100 text-cyan-700 border-cyan-300" },
+    delivered:  { label: "Selesai",   cls: "bg-green-100 text-green-700 border-green-300" },
+    cancelled:  { label: "Dibatalkan",cls: "bg-red-100 text-red-700 border-red-300" },
+  };
+  const cfg = map[s] ?? { label: status, cls: "bg-gray-100 text-gray-700 border-gray-300" };
+  return (
+    <span className={`text-xs font-semibold px-2 py-0.5 rounded border ${cfg.cls}`}>
+      {cfg.label}
+    </span>
+  );
+}
+
+// ── Types ──────────────────────────────────────────────────────────
 
 interface OrderProduct {
   productId: string;
@@ -75,1117 +121,1207 @@ interface OrderProduct {
   imageUrl?: string;
   sku?: string;
 }
-interface CustomerDetails {
-    name: string;
-    address: string;
-    whatsapp: string;
-}
-
-type OrderStatus = 'Delivered' | 'Shipped' | 'Processing' | 'Pending' | 'Cancelled';
 
 interface Order {
   id: string;
   customer: string;
-  customerDetails?: CustomerDetails;
-  status: OrderStatus;
-  paymentStatus: 'Paid' | 'Unpaid';
-  paymentMethod?: 'cod' | 'bank_transfer';
+  customerDetails?: {
+    name?: string;
+    address?: string;
+    whatsapp?: string;
+    phone?: string;
+    city?: string;
+    province?: string;
+  };
+  status: string;
+  paymentMethod: string;
+  paymentStatus: string;
   paymentProofUrl?: string;
   total: number;
   subtotal: number;
   shippingFee: number;
   shippingMethod?: string;
-  date: any; // Allow for Firestore Timestamp object
+  date: any;
   shippedAt?: any;
   products: OrderProduct[];
+  // Biteship
+  biteshipOrderId?: string;
+  biteshipCourierCode?: string;
+  biteshipCourierName?: string;
+  biteshipServiceCode?: string;
+  biteshipServiceName?: string;
+  biteshipStatus?: string;
+  waybillId?: string;
+  deliveryTrackingUrl?: string;
+  destinationAreaId?: string;
+  deliveryNotes?: string;
+  // Midtrans
+  midtransToken?: string;
+  midtransRedirectUrl?: string;
 }
+
+interface Product {
+  id: string;
+  name: string;
+  sku: string;
+  price: string | number;
+  stock: number;
+  image: string;
+  purchasePrice?: number;
+}
+
+// ── Helpers ────────────────────────────────────────────────────────
 
 const formatCurrency = (amount: number | string) => {
-    const numericAmount = typeof amount === 'string' ? parseFloat(String(amount).replace(/[^0-9]/g, '')) : amount;
-    if (isNaN(numericAmount)) {
-        return 'Rp 0';
-    }
-    return new Intl.NumberFormat("id-ID", {
-        style: "currency",
-        currency: "IDR",
-        minimumFractionDigits: 0,
-    }).format(numericAmount);
+  const n = typeof amount === "string" ? parseFloat(String(amount).replace(/[^0-9.]/g, "")) : amount;
+  if (isNaN(n)) return "Rp 0";
+  return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(n);
 };
 
-const parseCurrency = (value: string | number): number => {
-    if (typeof value === 'number') return value;
-    if (typeof value === 'string') {
-        const num = Number(value.replace(/[^0-9]/g, ''));
-        return isNaN(num) ? 0 : num;
-    }
-    return 0;
+const toNum = (v: unknown): number => {
+  if (typeof v === "number") return v;
+  if (typeof v === "string") return parseFloat(v.replace(/[^0-9.]/g, "")) || 0;
+  return 0;
+};
+
+function isPaid(paymentStatus: string) {
+  return ["paid", "settlement", "Paid"].includes(paymentStatus);
 }
 
+function fromFirestore(id: string, data: Record<string, any>): Order {
+  const status = data.status ?? "pending";
+  return {
+    id,
+    customer: data.customerDetails?.name ?? data.customer ?? "N/A",
+    customerDetails: data.customerDetails ?? {},
+    status,
+    paymentMethod: data.paymentMethod ?? "N/A",
+    paymentStatus: data.paymentStatus ?? "unpaid",
+    paymentProofUrl: data.paymentProofUrl,
+    total: toNum(data.total),
+    subtotal: toNum(data.subtotal),
+    shippingFee: toNum(data.shippingFee),
+    shippingMethod: data.shippingMethod ?? "",
+    date: data.date,
+    shippedAt: data.shippedAt,
+    products: (data.products ?? []).map((p: any) => ({
+      productId: p.productId ?? "",
+      name: p.name ?? "",
+      quantity: toNum(p.quantity),
+      price: toNum(p.price),
+      imageUrl: p.imageUrl ?? p.image ?? "",
+      image: p.imageUrl ?? p.image ?? "",
+      sku: p.sku ?? "",
+    })),
+    biteshipOrderId: data.biteshipOrderId,
+    biteshipCourierCode: data.biteshipCourierCode,
+    biteshipCourierName: data.biteshipCourierName,
+    biteshipServiceCode: data.biteshipServiceCode,
+    biteshipServiceName: data.biteshipServiceName,
+    biteshipStatus: data.biteshipStatus,
+    waybillId: data.waybillId,
+    deliveryTrackingUrl: data.deliveryTrackingUrl,
+    destinationAreaId: data.destinationAreaId,
+    deliveryNotes: data.deliveryNotes,
+    midtransToken: data.midtransToken,
+    midtransRedirectUrl: data.midtransRedirectUrl,
+  };
+}
 
-function AddProductToOrderDialog({ currentProducts, onAddProduct }: { currentProducts: OrderProduct[], onAddProduct: (product: Product, quantity: number) => void }) {
-    const [isOpen, setIsOpen] = useState(false);
-    const [allProducts, setAllProducts] = useState<Product[]>([]);
-    const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
-    const [loading, setLoading] = useState(false);
-    const [searchTerm, setSearchTerm] = useState("");
-    const [quantity, setQuantity] = useState(1);
+// ── Cetak Resi (open print window) ────────────────────────────────
 
-    const fetchProducts = async () => {
-        setLoading(true);
-        const querySnapshot = await getDocs(collection(db, "products"));
-        const productsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
-        setAllProducts(productsData);
+function printWaybill(order: Order) {
+  const w = window.open("", "_blank", "width=420,height=600");
+  if (!w) return;
+  const products = order.products
+    .map((p) => `<tr><td>${p.name}</td><td style="text-align:center">${p.quantity}</td></tr>`)
+    .join("");
+  w.document.write(`<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<title>Resi #${order.id.substring(0, 10)}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 12px; padding: 16px; }
+  h2 { font-size: 15px; margin-bottom: 8px; border-bottom: 2px solid #000; padding-bottom: 4px; }
+  .section { margin-bottom: 10px; }
+  .label { font-weight: bold; color: #555; font-size: 10px; text-transform: uppercase; }
+  .value { font-size: 13px; margin-top: 2px; }
+  .resi { font-size: 22px; font-weight: bold; letter-spacing: 2px; border: 2px dashed #000; padding: 6px 10px; display: inline-block; margin: 4px 0; }
+  table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+  td, th { border: 1px solid #ddd; padding: 4px 6px; font-size: 11px; }
+  th { background: #f5f5f5; font-weight: bold; }
+  @media print { body { padding: 4px; } }
+</style>
+</head>
+<body>
+<h2>Resi Pengiriman — Gogama Store</h2>
+<div class="section">
+  <div class="label">No. Resi</div>
+  <div class="resi">${order.waybillId || "-"}</div>
+</div>
+<div class="section">
+  <div class="label">Kurir</div>
+  <div class="value">${order.biteshipCourierName ?? order.biteshipCourierCode ?? "-"} — ${order.biteshipServiceName ?? order.biteshipServiceCode ?? ""}</div>
+</div>
+<div class="section">
+  <div class="label">Kepada</div>
+  <div class="value"><strong>${order.customerDetails?.name ?? order.customer}</strong></div>
+  <div class="value">${order.customerDetails?.address ?? "-"}</div>
+  <div class="value">Telp/WA: ${order.customerDetails?.whatsapp ?? order.customerDetails?.phone ?? "-"}</div>
+</div>
+<div class="section">
+  <div class="label">Isi Paket</div>
+  <table>
+    <thead><tr><th>Produk</th><th>Qty</th></tr></thead>
+    <tbody>${products}</tbody>
+  </table>
+</div>
+<div class="section">
+  <div class="label">No. Pesanan</div>
+  <div class="value">#${order.id}</div>
+</div>
+<div class="section">
+  <div class="label">Tracking URL</div>
+  <div class="value">${order.deliveryTrackingUrl ?? "-"}</div>
+</div>
+<br>
+<button onclick="window.print()" style="width:100%;padding:8px;font-size:13px;cursor:pointer;">🖨️ Cetak / Print</button>
+</body>
+</html>`);
+  w.document.close();
+}
+
+// ── ProcessShipmentDialog ──────────────────────────────────────────
+
+function ProcessShipmentDialog({
+  order,
+  onSuccess,
+}: {
+  order: Order;
+  onSuccess: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [processing, setProcessing] = useState(false);
+  const [result, setResult] = useState<{
+    biteshipOrderId: string;
+    waybillId?: string;
+    trackingUrl?: string;
+    status?: string;
+  } | null>(null);
+  const { toast } = useToast();
+
+  const instant = isInstantCourier(order.biteshipCourierCode);
+  const courierLabel =
+    order.biteshipCourierName ??
+    order.biteshipCourierCode ??
+    order.shippingMethod ??
+    "Kurir";
+
+  async function handleProcess() {
+    setProcessing(true);
+    try {
+      const res = await createBiteshipOrderFn({ orderId: order.id });
+      setResult(res.data);
+      onSuccess();
+      toast({ title: instant ? "Driver sedang dicari!" : "Resi berhasil dibuat!" });
+    } catch (err: any) {
+      toast({
+        title: "Gagal memproses pengiriman",
+        description: err?.message ?? "Terjadi kesalahan pada Biteship.",
+        variant: "destructive",
+      });
+    } finally {
+      setProcessing(false);
+    }
+  }
+
+  function handleClose() {
+    setOpen(false);
+    setTimeout(() => setResult(null), 300);
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) handleClose(); else setOpen(true); }}>
+      <DialogTrigger asChild>
+        <Button size="sm" className="bg-primary">
+          <Truck className="mr-2 h-4 w-4" />
+          Proses Pesanan
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>
+            {result ? (instant ? "Driver Dicari 🚀" : "Resi Pengiriman ✅") : "Konfirmasi Pengiriman"}
+          </DialogTitle>
+          <DialogDescription>
+            {result
+              ? instant
+                ? "Biteship sedang mencari driver. Status akan diperbarui otomatis."
+                : "Resi berhasil dibuat. Cetak dan tempel pada paket Anda."
+              : `Proses pengiriman via ${courierLabel} untuk pesanan ini?`}
+          </DialogDescription>
+        </DialogHeader>
+
+        {/* ─ Tampil konfirmasi ─ */}
+        {!result && (
+          <div className="space-y-3 py-2">
+            <div className="rounded-lg border p-3 space-y-1.5 text-sm">
+              <p className="font-semibold">{order.customerDetails?.name ?? order.customer}</p>
+              <p className="text-muted-foreground">{order.customerDetails?.address ?? "-"}</p>
+              <p className="text-muted-foreground">WA: {order.customerDetails?.whatsapp ?? "-"}</p>
+            </div>
+            <div className="rounded-lg bg-muted/50 px-3 py-2 text-sm flex items-center gap-2">
+              <Truck className="h-4 w-4 text-muted-foreground shrink-0" />
+              <div>
+                <p className="font-medium">{courierLabel}</p>
+                {order.biteshipServiceName && (
+                  <p className="text-xs text-muted-foreground">{order.biteshipServiceName}</p>
+                )}
+                {instant && (
+                  <p className="text-xs text-orange-600">⚡ Pengiriman Instan — driver dicari otomatis</p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ─ Tampil hasil ─ */}
+        {result && (
+          <div className="space-y-3 py-2">
+            {result.waybillId && (
+              <div className="rounded-lg border-2 border-dashed p-4 text-center">
+                <p className="text-xs text-muted-foreground mb-1">No. Resi</p>
+                <p className="text-2xl font-bold tracking-widest">{result.waybillId}</p>
+              </div>
+            )}
+            {instant && !result.waybillId && (
+              <div className="rounded-lg bg-orange-50 border border-orange-200 p-3 text-sm text-orange-800 flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                <span>Resi akan tersedia setelah driver menerima pesanan. Cek status di "Lihat Rincian".</span>
+              </div>
+            )}
+            {result.trackingUrl && (
+              <a href={result.trackingUrl} target="_blank" rel="noopener noreferrer"
+                className="flex items-center gap-2 text-sm text-primary hover:underline">
+                <ExternalLink className="h-4 w-4" />Lacak di Biteship
+              </a>
+            )}
+          </div>
+        )}
+
+        <DialogFooter className="gap-2">
+          {!result ? (
+            <>
+              <Button variant="outline" onClick={handleClose}>Batal</Button>
+              <Button onClick={handleProcess} disabled={processing}>
+                {processing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {instant ? "Cari Driver Sekarang" : "Buat Resi & Kirim"}
+              </Button>
+            </>
+          ) : (
+            <>
+              {!instant && result.waybillId && (
+                <Button variant="outline" onClick={() => printWaybill(order)}>
+                  <Printer className="mr-2 h-4 w-4" />Cetak Resi
+                </Button>
+              )}
+              <Button onClick={handleClose}>Selesai</Button>
+            </>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── ShipmentDetailDialog ───────────────────────────────────────────
+
+function ShipmentDetailDialog({ order }: { order: Order }) {
+  const instant = isInstantCourier(order.biteshipCourierCode);
+
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline">
+          <MapPin className="mr-2 h-4 w-4" />
+          Lihat Rincian
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Rincian Pengiriman</DialogTitle>
+          <DialogDescription>Pesanan #{order.id.substring(0, 10)}</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3 py-2 text-sm">
+          {/* Resi */}
+          {order.waybillId && (
+            <div className="rounded-lg border-2 border-dashed p-3 text-center">
+              <p className="text-xs text-muted-foreground mb-1">No. Resi</p>
+              <p className="text-xl font-bold tracking-widest">{order.waybillId}</p>
+            </div>
+          )}
+          {instant && !order.waybillId && (
+            <div className="rounded-lg bg-orange-50 border border-orange-200 p-3 text-orange-800 flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+              <span>Resi belum tersedia. Driver sedang dicari atau paket belum diambil.</span>
+            </div>
+          )}
+
+          {/* Info kurir */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-md bg-muted/50 p-2">
+              <p className="text-xs text-muted-foreground">Kurir</p>
+              <p className="font-medium">{order.biteshipCourierName ?? order.biteshipCourierCode ?? "-"}</p>
+            </div>
+            <div className="rounded-md bg-muted/50 p-2">
+              <p className="text-xs text-muted-foreground">Layanan</p>
+              <p className="font-medium">{order.biteshipServiceName ?? order.biteshipServiceCode ?? "-"}</p>
+            </div>
+            <div className="rounded-md bg-muted/50 p-2">
+              <p className="text-xs text-muted-foreground">Status Kurir</p>
+              <p className="font-medium">{order.biteshipStatus ?? "-"}</p>
+            </div>
+            <div className="rounded-md bg-muted/50 p-2">
+              <p className="text-xs text-muted-foreground">Biteship Order ID</p>
+              <p className="font-medium text-xs truncate">{order.biteshipOrderId ?? "-"}</p>
+            </div>
+          </div>
+
+          {/* Tujuan */}
+          <div className="rounded-lg border p-3 space-y-1">
+            <p className="font-semibold">{order.customerDetails?.name ?? order.customer}</p>
+            <p className="text-muted-foreground">{order.customerDetails?.address ?? "-"}</p>
+            <p className="text-muted-foreground">WA: {order.customerDetails?.whatsapp ?? "-"}</p>
+          </div>
+        </div>
+
+        <DialogFooter className="gap-2">
+          {!instant && order.waybillId && (
+            <Button variant="outline" onClick={() => printWaybill(order)}>
+              <Printer className="mr-2 h-4 w-4" />Cetak Resi
+            </Button>
+          )}
+          {order.deliveryTrackingUrl && (
+            <Button asChild>
+              <a href={order.deliveryTrackingUrl} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="mr-2 h-4 w-4" />Lacak Paket
+              </a>
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── AddProductToOrderDialog ────────────────────────────────────────
+
+function AddProductToOrderDialog({
+  currentProducts,
+  onAddProduct,
+}: {
+  currentProducts: OrderProduct[];
+  onAddProduct: (product: Product, quantity: number) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [allProducts, setAllProducts] = useState<Product[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [quantity, setQuantity] = useState(1);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setLoading(true);
+    import("firebase/firestore").then(({ getDocs, collection: col }) =>
+      getDocs(col(db, "products")).then((snap) => {
+        setAllProducts(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Product)));
         setLoading(false);
-    };
-
-    useEffect(() => {
-        if (isOpen) {
-            fetchProducts();
-        }
-    }, [isOpen]);
-
-    useEffect(() => {
-        const currentProductIds = currentProducts.map(p => p.productId);
-        const availableProducts = allProducts.filter(p => !currentProductIds.includes(p.id));
-        const results = availableProducts.filter(p => {
-            const nameMatch = p.name.toLowerCase().includes(searchTerm.toLowerCase());
-            // Safely check SKU
-            const skuMatch = p.sku && typeof p.sku === 'string' ? p.sku.toLowerCase().includes(searchTerm.toLowerCase()) : false;
-            return nameMatch || skuMatch;
-        });
-        setFilteredProducts(results);
-    }, [searchTerm, allProducts, currentProducts]);
-    
-    const handleAddClick = (product: Product) => {
-        onAddProduct(product, quantity);
-        setIsOpen(false);
-    }
-
-    return (
-        <Dialog open={isOpen} onOpenChange={setIsOpen}>
-            <DialogTrigger asChild>
-                <Button variant="outline"><PlusCircle className="mr-2 h-4 w-4"/>Tambah Produk</Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col">
-                <DialogHeader>
-                    <DialogTitle>Tambah Produk ke Pesanan</DialogTitle>
-                    <DialogDescription>Cari dan pilih produk yang ingin ditambahkan.</DialogDescription>
-                </DialogHeader>
-                 <div className="relative pt-2">
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                        placeholder="Cari produk berdasarkan nama atau SKU..."
-                        className="pl-8"
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                    />
-                </div>
-                <div className="flex-1 overflow-y-auto">
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Produk</TableHead>
-                                <TableHead>Stok</TableHead>
-                                <TableHead>Harga</TableHead>
-                                <TableHead className="w-[180px]">Jumlah</TableHead>
-                                <TableHead className="text-right">Aksi</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {loading ? (
-                                <TableRow><TableCell colSpan={5} className="text-center">Memuat produk...</TableCell></TableRow>
-                            ) : filteredProducts.length > 0 ? filteredProducts.map(p => (
-                                <TableRow key={p.id}>
-                                    <TableCell className="font-medium">{p.name}</TableCell>
-                                    <TableCell>{p.stock}</TableCell>
-                                    <TableCell>{formatCurrency(p.price)}</TableCell>
-                                    <TableCell>
-                                        <Input type="number" defaultValue={1} min={1} max={p.stock} onChange={(e) => setQuantity(Number(e.target.value))} />
-                                    </TableCell>
-                                    <TableCell className="text-right">
-                                        <Button onClick={() => handleAddClick(p)}>Tambah</Button>
-                                    </TableCell>
-                                </TableRow>
-                            )) : (
-                                <TableRow><TableCell colSpan={5} className="text-center">Produk tidak ditemukan atau sudah ada di pesanan.</TableCell></TableRow>
-                            )}
-                        </TableBody>
-                    </Table>
-                </div>
-            </DialogContent>
-        </Dialog>
-    )
-}
-
-function EditOrderDialog({ order, onOrderUpdated }: { order: Order, onOrderUpdated: () => void }) {
-    const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-    const [editableProducts, setEditableProducts] = useState<OrderProduct[]>([]);
-    const [shippingFee, setShippingFee] = useState<number>(0);
-    const [isSaving, setIsSaving] = useState(false);
-    const { toast } = useToast();
-
-    useEffect(() => {
-        if (order) {
-            // Deep copy and ensure SKU is a string
-            const productsWithStrSku = (order.products || []).map(p => ({
-                ...p,
-                sku: String(p.sku || ''),
-            }));
-            setEditableProducts(productsWithStrSku);
-            setShippingFee(order.shippingFee || 0);
-        }
-    }, [order]);
-    
-    const sortedEditableProducts = useMemo(() => {
-        return [...editableProducts].sort((a, b) => a.name.localeCompare(b.name));
-    }, [editableProducts]);
-
-    const handleQuantityChange = (productId: string, newQuantity: number) => {
-        const quantity = isNaN(newQuantity) || newQuantity < 0 ? 0 : newQuantity;
-        setEditableProducts(products => 
-            products.map(p => p.productId === productId ? { ...p, quantity: quantity } : p)
-        );
-    };
-
-    const handleRemoveItem = (productId: string) => {
-        setEditableProducts(products => products.filter(p => p.productId !== productId));
-    };
-
-    const handleAddProduct = (product: Product, quantity: number) => {
-        const newProduct: OrderProduct = {
-            productId: product.id,
-            name: product.name,
-            quantity: quantity,
-            price: parseCurrency(product.price),
-            imageUrl: product.image,
-            sku: product.sku,
-        };
-        setEditableProducts(prev => [...prev, newProduct]);
-    };
-
-    const subtotal = useMemo(() => {
-        return editableProducts.reduce((sum, p) => sum + (p.price * p.quantity), 0);
-    }, [editableProducts]);
-
-    const newTotal = useMemo(() => subtotal + shippingFee, [subtotal, shippingFee]);
-
-    const handleSaveChanges = async () => {
-        setIsSaving(true);
-        const batch = writeBatch(db);
-
-        try {
-            const originalProducts = order.products || [];
-            const stockAdjustments = new Map<string, number>();
-
-            // Calculate differences for existing products
-            originalProducts.forEach(origP => {
-                const newP = editableProducts.find(p => p.productId === origP.productId);
-                if (newP) {
-                    const diff = origP.quantity - newP.quantity; // +ve if stock returns
-                    if (diff !== 0) {
-                        stockAdjustments.set(origP.productId, (stockAdjustments.get(origP.productId) || 0) + diff);
-                    }
-                } else { // Item was removed
-                    stockAdjustments.set(origP.productId, (stockAdjustments.get(origP.productId) || 0) + origP.quantity);
-                }
-            });
-
-            // Calculate differences for newly added products
-            editableProducts.forEach(newP => {
-                if (!originalProducts.some(origP => origP.productId === newP.productId)) {
-                     const diff = -newP.quantity; // -ve as stock is taken
-                     stockAdjustments.set(newP.productId, (stockAdjustments.get(newP.productId) || 0) + diff);
-                }
-            });
-
-
-            // Apply stock updates
-            for (const [productId, adjustment] of stockAdjustments.entries()) {
-                const productRef = doc(db, "products", productId);
-                const productDoc = await getDoc(productRef);
-                if (productDoc.exists()) {
-                    const currentStock = productDoc.data().stock || 0;
-                    batch.update(productRef, { stock: currentStock + adjustment });
-                }
-            }
-
-            // Update the order itself
-            const orderRef = doc(db, "orders", order.id);
-            batch.update(orderRef, {
-                products: editableProducts,
-                shippingFee: shippingFee,
-                subtotal: subtotal,
-                total: newTotal,
-            });
-            
-            await batch.commit();
-
-            toast({ title: "Pesanan Berhasil Diperbarui", description: "Stok produk dan detail pesanan telah diperbarui." });
-            onOrderUpdated();
-            setIsEditDialogOpen(false);
-
-        } catch (error) {
-            console.error("Error updating order:", error);
-            toast({ variant: "destructive", title: "Gagal Menyimpan Perubahan" });
-        } finally {
-            setIsSaving(false);
-        }
-    };
-
-    return (
-        <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-            <DialogTrigger asChild>
-                <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-                    <Edit className="mr-2 h-4 w-4" /> Edit Pesanan
-                </DropdownMenuItem>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col">
-                <DialogHeader className="flex-row justify-between items-center">
-                    <div>
-                        <DialogTitle>Edit Pesanan #{order.id.substring(0, 7)}...</DialogTitle>
-                        <DialogDescription>
-                            Ubah jumlah, hapus item, atau tambah produk baru ke pesanan.
-                        </DialogDescription>
-                    </div>
-                    <AddProductToOrderDialog currentProducts={editableProducts} onAddProduct={handleAddProduct} />
-                </DialogHeader>
-                <div className="flex-1 overflow-y-auto p-1">
-                    <div className="relative w-full overflow-auto">
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead>Produk</TableHead>
-                                    <TableHead className="w-[150px]">Jumlah</TableHead>
-                                    <TableHead className="text-right">Harga Satuan</TableHead>
-                                    <TableHead className="text-right">Subtotal</TableHead>
-                                    <TableHead className="w-[50px]"></TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {sortedEditableProducts.map(p => (
-                                    <TableRow key={p.productId}>
-                                        <TableCell className="font-medium">{p.name}</TableCell>
-                                        <TableCell>
-                                            <div className="flex items-center gap-1">
-                                                <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => handleQuantityChange(p.productId, p.quantity - 1)}>
-                                                    <Minus className="h-3 w-3" />
-                                                </Button>
-                                                <Input
-                                                    type="number"
-                                                    value={p.quantity}
-                                                    onChange={(e) => handleQuantityChange(p.productId, parseInt(e.target.value, 10) || 0)}
-                                                    className="w-14 h-7 text-center"
-                                                    min="1"
-                                                />
-                                                <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => handleQuantityChange(p.productId, p.quantity + 1)}>
-                                                    <Plus className="h-3 w-3" />
-                                                </Button>
-                                            </div>
-                                        </TableCell>
-                                        <TableCell className="text-right">{formatCurrency(p.price)}</TableCell>
-                                        <TableCell className="text-right font-semibold">{formatCurrency(p.price * p.quantity)}</TableCell>
-                                        <TableCell className="text-right">
-                                             <AlertDialog>
-                                                <AlertDialogTrigger asChild>
-                                                    <Button variant="ghost" size="icon">
-                                                        <Trash2 className="h-4 w-4 text-destructive" />
-                                                    </Button>
-                                                </AlertDialogTrigger>
-                                                <AlertDialogContent>
-                                                    <AlertDialogHeader>
-                                                        <AlertDialogTitle>Hapus Produk dari Pesanan?</AlertDialogTitle>
-                                                        <AlertDialogDescription>
-                                                            Anda yakin ingin menghapus <strong>{p.name}</strong> dari pesanan ini? Stok produk akan dikembalikan secara otomatis.
-                                                        </AlertDialogDescription>
-                                                    </AlertDialogHeader>
-                                                    <AlertDialogFooter>
-                                                        <AlertDialogCancel>Batal</AlertDialogCancel>
-                                                        <AlertDialogAction onClick={() => handleRemoveItem(p.productId)} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">Ya, Hapus</AlertDialogAction>
-                                                    </AlertDialogFooter>
-                                                </AlertDialogContent>
-                                            </AlertDialog>
-                                        </TableCell>
-                                    </TableRow>
-                                ))}
-                                {sortedEditableProducts.length === 0 && (
-                                    <TableRow>
-                                        <TableCell colSpan={5} className="text-center h-24 text-muted-foreground">
-                                            Tidak ada produk dalam pesanan. Tambahkan produk baru untuk melanjutkan.
-                                        </TableCell>
-                                    </TableRow>
-                                )}
-                            </TableBody>
-                        </Table>
-                    </div>
-                    <Separator className="my-4"/>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 px-4">
-                        <div className="space-y-2">
-                            <Label htmlFor="shippingFee">Biaya Pengiriman</Label>
-                            <div className="relative">
-                                <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground"/>
-                                <Input 
-                                    id="shippingFee" 
-                                    type="number" 
-                                    value={shippingFee}
-                                    onChange={(e) => setShippingFee(Number(e.target.value))}
-                                    className="pl-8"
-                                />
-                            </div>
-                        </div>
-                        <div className="space-y-1 text-right md:pt-5">
-                            <p className="text-sm text-muted-foreground">Subtotal Produk: {formatCurrency(subtotal)}</p>
-                            <p className="text-lg font-bold">Total Baru: {formatCurrency(newTotal)}</p>
-                        </div>
-                    </div>
-                </div>
-                <DialogFooter className="flex-col sm:flex-row sm:justify-end items-stretch sm:items-center gap-4 pt-4 border-t">
-                    <div className="flex gap-2">
-                        <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>Batal</Button>
-                        <Button onClick={handleSaveChanges} disabled={isSaving || editableProducts.length === 0}>
-                            {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}
-                            Simpan Perubahan
-                        </Button>
-                    </div>
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
+      })
     );
+  }, [isOpen]);
+
+  const filtered = useMemo(() => {
+    const ids = new Set(currentProducts.map((p) => p.productId));
+    return allProducts
+      .filter((p) => !ids.has(p.id))
+      .filter((p) =>
+        p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (p.sku ?? "").toLowerCase().includes(searchTerm.toLowerCase())
+      );
+  }, [allProducts, currentProducts, searchTerm]);
+
+  return (
+    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline"><PlusCircle className="mr-2 h-4 w-4" />Tambah Produk</Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-3xl max-h-[90vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle>Tambah Produk ke Pesanan</DialogTitle>
+        </DialogHeader>
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input placeholder="Cari nama / SKU..." className="pl-8" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Produk</TableHead><TableHead>Stok</TableHead>
+                <TableHead>Harga</TableHead><TableHead className="w-36">Jumlah</TableHead>
+                <TableHead className="text-right">Aksi</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                <TableRow><TableCell colSpan={5} className="text-center">Memuat...</TableCell></TableRow>
+              ) : filtered.map((p) => (
+                <TableRow key={p.id}>
+                  <TableCell className="font-medium">{p.name}</TableCell>
+                  <TableCell>{p.stock}</TableCell>
+                  <TableCell>{formatCurrency(p.price)}</TableCell>
+                  <TableCell>
+                    <Input type="number" defaultValue={1} min={1} max={p.stock}
+                      onChange={(e) => setQuantity(Number(e.target.value))} />
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button onClick={() => { onAddProduct(p, quantity); setIsOpen(false); }}>Tambah</Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
 }
+
+// ── EditOrderDialog ────────────────────────────────────────────────
+
+function EditOrderDialog({ order, onOrderUpdated }: { order: Order; onOrderUpdated: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [editableProducts, setEditableProducts] = useState<OrderProduct[]>([]);
+  const [shippingFee, setShippingFee] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    if (order) {
+      setEditableProducts((order.products ?? []).map((p) => ({ ...p, sku: String(p.sku ?? "") })));
+      setShippingFee(order.shippingFee ?? 0);
+    }
+  }, [order]);
+
+  const subtotal = useMemo(() => editableProducts.reduce((s, p) => s + p.price * p.quantity, 0), [editableProducts]);
+  const newTotal = subtotal + shippingFee;
+
+  const handleSave = async () => {
+    setSaving(true);
+    const batch = writeBatch(db);
+    try {
+      const orig = order.products ?? [];
+      const adjMap = new Map<string, number>();
+      orig.forEach((op) => {
+        const np = editableProducts.find((p) => p.productId === op.productId);
+        if (np) { if (op.quantity !== np.quantity) adjMap.set(op.productId, (adjMap.get(op.productId) ?? 0) + op.quantity - np.quantity); }
+        else adjMap.set(op.productId, (adjMap.get(op.productId) ?? 0) + op.quantity);
+      });
+      editableProducts.forEach((np) => {
+        if (!orig.some((op) => op.productId === np.productId))
+          adjMap.set(np.productId, (adjMap.get(np.productId) ?? 0) - np.quantity);
+      });
+      for (const [pid, adj] of adjMap) {
+        const pdoc = await getDoc(doc(db, "products", pid));
+        if (pdoc.exists()) batch.update(doc(db, "products", pid), { stock: (pdoc.data().stock ?? 0) + adj });
+      }
+      batch.update(doc(db, "orders", order.id), {
+        products: editableProducts, shippingFee, subtotal, total: newTotal,
+      });
+      await batch.commit();
+      toast({ title: "Pesanan berhasil diperbarui" });
+      onOrderUpdated();
+      setOpen(false);
+    } catch {
+      toast({ title: "Gagal menyimpan", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+          <Edit className="mr-2 h-4 w-4" />Edit Pesanan
+        </DropdownMenuItem>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col">
+        <DialogHeader className="flex-row justify-between items-center">
+          <div>
+            <DialogTitle>Edit Pesanan #{order.id.substring(0, 8)}</DialogTitle>
+            <DialogDescription>Ubah jumlah, hapus, atau tambah produk.</DialogDescription>
+          </div>
+          <AddProductToOrderDialog currentProducts={editableProducts}
+            onAddProduct={(p, qty) => setEditableProducts((prev) => [...prev, {
+              productId: p.id, name: p.name, quantity: qty,
+              price: toNum(p.price), imageUrl: p.image, sku: p.sku,
+            }])} />
+        </DialogHeader>
+        <div className="flex-1 overflow-y-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Produk</TableHead><TableHead className="w-36">Jumlah</TableHead>
+                <TableHead className="text-right">Harga</TableHead><TableHead className="text-right">Subtotal</TableHead>
+                <TableHead className="w-12" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {editableProducts.map((p) => (
+                <TableRow key={p.productId}>
+                  <TableCell>{p.name}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1">
+                      <Button variant="outline" size="icon" className="h-7 w-7"
+                        onClick={() => setEditableProducts((ps) => ps.map((x) => x.productId === p.productId ? { ...x, quantity: Math.max(1, x.quantity - 1) } : x))}>
+                        <Minus className="h-3 w-3" />
+                      </Button>
+                      <Input type="number" value={p.quantity} className="w-14 h-7 text-center"
+                        onChange={(e) => setEditableProducts((ps) => ps.map((x) => x.productId === p.productId ? { ...x, quantity: parseInt(e.target.value) || 1 } : x))} />
+                      <Button variant="outline" size="icon" className="h-7 w-7"
+                        onClick={() => setEditableProducts((ps) => ps.map((x) => x.productId === p.productId ? { ...x, quantity: x.quantity + 1 } : x))}>
+                        <Plus className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right">{formatCurrency(p.price)}</TableCell>
+                  <TableCell className="text-right font-semibold">{formatCurrency(p.price * p.quantity)}</TableCell>
+                  <TableCell>
+                    <Button variant="ghost" size="icon"
+                      onClick={() => setEditableProducts((ps) => ps.filter((x) => x.productId !== p.productId))}>
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          <Separator className="my-4" />
+          <div className="grid grid-cols-2 gap-4 px-4">
+            <div className="space-y-2">
+              <Label>Biaya Pengiriman</Label>
+              <div className="relative">
+                <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input type="number" value={shippingFee} onChange={(e) => setShippingFee(Number(e.target.value))} className="pl-8" />
+              </div>
+            </div>
+            <div className="text-right pt-6 space-y-1">
+              <p className="text-sm text-muted-foreground">Subtotal: {formatCurrency(subtotal)}</p>
+              <p className="font-bold text-base">Total Baru: {formatCurrency(newTotal)}</p>
+            </div>
+          </div>
+        </div>
+        <DialogFooter className="pt-4 border-t gap-2">
+          <Button variant="outline" onClick={() => setOpen(false)}>Batal</Button>
+          <Button onClick={handleSave} disabled={saving || editableProducts.length === 0}>
+            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Simpan Perubahan
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Main Page ──────────────────────────────────────────────────────
 
 export default function OrdersPage() {
+  const router = useRouter();
   const [allOrders, setAllOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState<string | null>(null);
-  const { toast } = useToast();
-  const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
   const [searchTerm, setSearchTerm] = useState("");
+  const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
+  const { toast } = useToast();
 
+  // ── Real-time orders ─────────────────────────────────────────────
 
-  const fetchOrders = useCallback(async () => {
-    setLoading(true);
-    try {
-        const q = query(collection(db, "orders"), orderBy("date", "desc"));
-        const querySnapshot = await getDocs(q);
-        const ordersData = querySnapshot.docs.map(doc => {
-             const data = doc.data();
+  useEffect(() => {
+    const q = query(collection(db, "orders"), orderBy("date", "desc"));
+    const unsub = onSnapshot(q, async (snap) => {
+      const orders = snap.docs.map((d) => fromFirestore(d.id, d.data() as Record<string, any>));
 
-            // Normalize status to have capital letter
-            let status = data.status || 'Pending';
-            status = status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
-
-             // Normalize prices and total
-            const products = data.products?.map((p: any) => ({
-                 ...p,
-                 price: typeof p.price === 'string' ? parseFloat(p.price.replace(/[^0-9]/g, '')) : p.price
-             })) || [];
-            const total = typeof data.total === 'string' ? parseFloat(data.total.replace(/[^0-9]/g, '')) : data.total || 0;
-
-            return {
-                id: doc.id,
-                ...data,
-                status: status as OrderStatus,
-                products,
-                total,
-                shippingFee: data.shippingFee || 0,
-                subtotal: data.subtotal || 0,
-            } as Order
-        });
-
-        // Auto-complete logic
-        const fourDaysAgo = subDays(new Date(), 4);
-        const batch = writeBatch(db);
-        let updatedInBatch = false;
-
-        const updatedOrders: Order[] = ordersData.map(order => {
-            if (order.status === 'Shipped' && order.shippedAt && order.shippedAt.toDate() < fourDaysAgo) {
-                const orderRef = doc(db, "orders", order.id);
-                batch.update(orderRef, { status: 'Delivered' });
-                updatedInBatch = true;
-                return { ...order, status: 'Delivered' as OrderStatus };
-            }
-            return order;
-        });
-        
-        if (updatedInBatch) {
-            await batch.commit();
-            toast({ title: "Status Pesanan Diperbarui", description: "Beberapa pesanan yang dikirim telah ditandai selesai secara otomatis."});
+      // Auto-complete: Shipped > 4 days → Delivered
+      const fourDaysAgo = subDays(new Date(), 4);
+      const batch = writeBatch(db);
+      let changed = false;
+      orders.forEach((o) => {
+        if (
+          ["shipped", "Shipped", "dikirim", "Dikirim"].includes(o.status) &&
+          o.shippedAt?.toDate?.() < fourDaysAgo
+        ) {
+          batch.update(doc(db, "orders", o.id), { status: "Delivered" });
+          changed = true;
         }
-        
-        setAllOrders(updatedOrders);
+      });
+      if (changed) await batch.commit();
 
-    } catch (error) {
-        console.error("Error fetching orders: ", error);
-        toast({
-            variant: "destructive",
-            title: "Gagal memuat pesanan",
-            description: "Terjadi kesalahan saat mengambil data dari server."
-        });
+      setAllOrders(orders);
+      setLoading(false);
+    });
+    return unsub;
+  }, []);
+
+  // ── PDF helpers ──────────────────────────────────────────────────
+
+  const generatePdf = useCallback(async (orderId: string, type: "invoice" | "packingSlip") => {
+    const snap = await getDoc(doc(db, "orders", orderId));
+    if (!snap.exists()) { toast({ variant: "destructive", title: "Pesanan tidak ditemukan" }); return; }
+    const order = fromFirestore(snap.id, snap.data() as Record<string, any>);
+
+    const pdf = new jsPDF();
+    pdf.setFontSize(18); pdf.setFont("helvetica", "bold");
+    pdf.text(type === "invoice" ? "FAKTUR PENJUALAN" : "SLIP PENGEPAKAN", 105, 20, { align: "center" });
+    pdf.setFontSize(10); pdf.setFont("helvetica", "normal");
+    pdf.text(`No. Pesanan: ${order.id}`, 14, 30);
+    if (order.date?.toDate)
+      pdf.text(`Tanggal: ${format(order.date.toDate(), "dd MMMM yyyy, HH:mm", { locale: dateFnsLocaleId })}`, 14, 35);
+    pdf.text(`Status: ${order.status} | Bayar: ${order.paymentStatus}`, 14, 40);
+    pdf.text(`Kepada: ${order.customerDetails?.name ?? order.customer}`, 14, 50);
+    const addrLines = pdf.splitTextToSize(order.customerDetails?.address ?? "-", 90);
+    pdf.text(addrLines, 14, 55);
+    const afterAddr = 55 + addrLines.length * 5;
+    pdf.text(`WA: ${order.customerDetails?.whatsapp ?? "-"}`, 14, afterAddr);
+
+    const cols = type === "invoice"
+      ? ["Produk", "Qty", "Harga", "Subtotal"]
+      : ["No.", "SKU", "Produk", "Qty"];
+    const rows = type === "invoice"
+      ? order.products.map((p) => [p.name, p.quantity, formatCurrency(p.price), formatCurrency(p.price * p.quantity)])
+      : order.products.map((p, i) => [i + 1, p.sku ?? "N/A", p.name, p.quantity]);
+
+    pdf.autoTable({ head: [cols], body: rows, startY: afterAddr + 10, theme: "grid" });
+    const fY = (pdf as any).lastAutoTable.finalY;
+    if (type === "invoice") {
+      pdf.setFontSize(10);
+      pdf.text("Subtotal:", 140, fY + 10); pdf.text(formatCurrency(order.subtotal), 200, fY + 10, { align: "right" });
+      pdf.text("Ongkir:", 140, fY + 15); pdf.text(formatCurrency(order.shippingFee), 200, fY + 15, { align: "right" });
+      pdf.setFontSize(12); pdf.setFont("helvetica", "bold");
+      pdf.text("TOTAL:", 140, fY + 22); pdf.text(formatCurrency(order.total), 200, fY + 22, { align: "right" });
+    }
+    pdf.save(`${type === "invoice" ? "Faktur" : "Packing"}-${order.id.substring(0, 8)}.pdf`);
+  }, [toast]);
+
+  const generateBulkDocuments = useCallback(async (type: "invoice" | "packingSlip") => {
+    const pdf = new jsPDF();
+    let first = true;
+    for (const orderId of selectedOrders) {
+      const snap = await getDoc(doc(db, "orders", orderId));
+      if (!snap.exists()) continue;
+      if (!first) pdf.addPage();
+      const order = fromFirestore(snap.id, snap.data() as Record<string, any>);
+      pdf.setFontSize(16); pdf.setFont("helvetica", "bold");
+      pdf.text(type === "invoice" ? "FAKTUR PENJUALAN" : "SLIP PENGEPAKAN", 105, 20, { align: "center" });
+      pdf.setFontSize(10); pdf.setFont("helvetica", "normal");
+      pdf.text(`No. Pesanan: ${order.id}`, 14, 30);
+      pdf.text(`Kepada: ${order.customerDetails?.name ?? order.customer}`, 14, 36);
+      const addrLines = pdf.splitTextToSize(order.customerDetails?.address ?? "-", 90);
+      pdf.text(addrLines, 14, 41);
+      const afterAddr = 41 + addrLines.length * 5;
+      const cols = type === "invoice"
+        ? ["Produk", "Qty", "Harga", "Subtotal"]
+        : ["No.", "SKU", "Produk", "Qty"];
+      const rows = type === "invoice"
+        ? order.products.map((p) => [p.name, p.quantity, formatCurrency(p.price), formatCurrency(p.price * p.quantity)])
+        : order.products.map((p, i) => [i + 1, p.sku ?? "N/A", p.name, p.quantity]);
+      pdf.autoTable({ head: [cols], body: rows, startY: afterAddr + 6 });
+      first = false;
+    }
+    pdf.save(`dokumen-${new Date().toISOString().split("T")[0]}.pdf`);
+  }, [selectedOrders]);
+
+  // ── Order actions ─────────────────────────────────────────────────
+
+  const updateOrderStatus = useCallback(async (orderId: string, updates: Record<string, unknown>) => {
+    setIsProcessing(orderId);
+    try {
+      if (updates.status === "Shipped") updates.shippedAt = serverTimestamp();
+      await updateDoc(doc(db, "orders", orderId), updates as any);
+      toast({ title: "Status pesanan diperbarui" });
+    } catch {
+      toast({ title: "Gagal memperbarui", variant: "destructive" });
     } finally {
-        setLoading(false);
+      setIsProcessing(null);
     }
   }, [toast]);
 
-  useEffect(() => {
-    fetchOrders();
-  }, [fetchOrders]);
-  
-  const generatePdf = async (orderId: string, type: 'invoice' | 'packingSlip') => {
-    const orderDocRef = doc(db, "orders", orderId);
-    const orderDoc = await getDoc(orderDocRef);
-    if (!orderDoc.exists()) {
-        toast({ variant: "destructive", title: "Pesanan tidak ditemukan" });
-        return;
-    }
-    const orderData = orderDoc.data();
-    const total = typeof orderData.total === 'string' ? parseFloat(orderData.total.replace(/[^0-9]/g, '')) : orderData.total || 0;
-    const order = { id: orderDoc.id, ...orderData, total } as Order;
-
-
-    const pdf = new jsPDF();
-    
-    // Header
-    pdf.setFontSize(18);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text(type === 'invoice' ? 'FAKTUR PENJUALAN' : 'SLIP PENGEPAKAN', 105, 20, { align: 'center' });
-    
-    // Order Details
-    pdf.setFontSize(10);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(`No. Pesanan: ${order.id}`, 14, 30);
-    pdf.text(`Tanggal: ${format(order.date.toDate(), 'dd MMMM yyyy, HH:mm', { locale: dateFnsLocaleId })}`, 14, 35);
-    pdf.text(`Status Pesanan: ${order.status}`, 14, 40);
-    pdf.text(`Status Pembayaran: ${order.paymentStatus}`, 14, 45);
-    
-    // Customer Details
-    pdf.text(`Kepada:`, 14, 55);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text(order.customerDetails?.name || order.customer, 14, 60);
-    pdf.setFont('helvetica', 'normal');
-    const addressLines = pdf.splitTextToSize(order.customerDetails?.address || 'Alamat tidak tersedia', 90);
-    pdf.text(addressLines, 14, 65);
-    let currentY = 65 + (addressLines.length * 5);
-    pdf.text(`Telp/WA: ${order.customerDetails?.whatsapp || 'N/A'}`, 14, currentY);
-
-    // Products Table
-    const tableColumn = type === 'invoice' 
-        ? ["Produk", "Jumlah", "Harga", "Subtotal"] 
-        : ["No.", "Kode SKU", "Nama Produk", "Jumlah"];
-    
-    // Fetch product details for SKUs if needed
-    const productDetailsMap = new Map<string, { sku: string }>();
-    if (type === 'packingSlip') {
-        const productIds = order.products.map(p => p.productId);
-        if (productIds.length > 0) {
-            const productDocs = await Promise.all(productIds.map(id => getDoc(doc(db, "products", id))));
-            productDocs.forEach(pDoc => {
-                if (pDoc.exists()) {
-                    productDetailsMap.set(pDoc.id, { sku: pDoc.data().sku || 'N/A' });
-                }
-            });
-        }
-    }
-    
-    const sortedProducts = [...order.products].sort((a, b) => a.name.localeCompare(b.name));
-
-    const tableRows = type === 'invoice'
-        ? sortedProducts.map(p => [
-            p.name,
-            p.quantity,
-            formatCurrency(p.price),
-            formatCurrency(p.price * p.quantity)
-        ])
-        : sortedProducts.map((p, index) => [
-            index + 1,
-            p.sku || productDetailsMap.get(p.productId)?.sku || 'N/A',
-            p.name,
-            p.quantity
-        ]);
-
-    pdf.autoTable({
-        head: [tableColumn],
-        body: tableRows,
-        startY: currentY + 10,
-        theme: 'grid'
-    });
-    
-    let finalY = (pdf as any).lastAutoTable.finalY;
-    
-    if (type === 'invoice') {
-        // Totals for invoice
-        pdf.setFontSize(10);
-        pdf.text("Subtotal Produk:", 140, finalY + 10);
-        pdf.text(formatCurrency(order.subtotal || 0), 200, finalY + 10, { align: 'right' });
-
-        pdf.text("Biaya Pengiriman:", 140, finalY + 15);
-        pdf.text(formatCurrency(order.shippingFee || 0), 200, finalY + 15, { align: 'right' });
-        
-        pdf.setFontSize(12);
-        pdf.setFont('helvetica', 'bold');
-        pdf.text('TOTAL:', 140, finalY + 22);
-        pdf.text(String(formatCurrency(order.total)), 200, finalY + 22, { align: 'right' });
-    }
-
-    const filename = `${type === 'invoice' ? 'Faktur' : 'Packing-Slip'}-${order.id.substring(0,8)}.pdf`;
-    pdf.save(filename);
-  };
-
-
-  const generateBulkDocuments = async (type: 'invoice' | 'packingSlip') => {
-      const pdf = new jsPDF();
-      let isFirstPage = true;
-
-      for (const orderId of selectedOrders) {
-        if (!isFirstPage) {
-          pdf.addPage();
-        }
-        
-        const orderRef = doc(db, "orders", orderId);
-        const orderDoc = await getDoc(orderRef);
-        
-        if (orderDoc.exists()) {
-          const order = { id: orderDoc.id, ...orderDoc.data() } as Order;
-          
-          // Header
-          pdf.setFontSize(18);
-          pdf.setFont('helvetica', 'bold');
-          pdf.text(type === 'invoice' ? 'FAKTUR PENJUALAN' : 'SLIP PENGEPAKAN', 105, 20, { align: 'center' });
-          
-          // Order Details
-          pdf.setFontSize(10);
-          pdf.setFont('helvetica', 'normal');
-          pdf.text(`No. Pesanan: ${order.id}`, 14, 30);
-          pdf.text(`Tanggal: ${format(order.date.toDate(), 'dd MMMM yyyy, HH:mm', { locale: dateFnsLocaleId })}`, 14, 35);
-          pdf.text(`Status Pesanan: ${order.status}`, 14, 40);
-          pdf.text(`Status Pembayaran: ${order.paymentStatus}`, 14, 45);
-          
-          // Customer Details
-          pdf.text(`Kepada:`, 14, 55);
-          pdf.setFont('helvetica', 'bold');
-          pdf.text(order.customerDetails?.name || order.customer, 14, 60);
-          pdf.setFont('helvetica', 'normal');
-          const addressLines = pdf.splitTextToSize(order.customerDetails?.address || 'Alamat tidak tersedia', 90);
-          pdf.text(addressLines, 14, 65);
-          let currentY = 65 + (addressLines.length * 5);
-          pdf.text(`Telp/WA: ${order.customerDetails?.whatsapp || 'N/A'}`, 14, currentY);
-          
-          const tableY = currentY + 10;
-          
-          // Fetch product details for SKUs if needed for packing slip
-            const productDetailsMap = new Map<string, { sku: string }>();
-            if (type === 'packingSlip') {
-                const productIds = order.products.map(p => p.productId);
-                if (productIds.length > 0) {
-                    const productDocs = await Promise.all(productIds.map(id => getDoc(doc(db, "products", id))));
-                    productDocs.forEach(pDoc => {
-                        if (pDoc.exists()) {
-                            productDetailsMap.set(pDoc.id, { sku: pDoc.data().sku || 'N/A' });
-                        }
-                    });
-                }
-            }
-            
-          const tableColumn = type === 'invoice' 
-              ? ["Produk", "Jumlah", "Harga", "Subtotal"] 
-              : ["No.", "Kode SKU", "Nama Produk", "Jumlah"];
-              
-          const sortedProducts = [...order.products].sort((a, b) => a.name.localeCompare(b.name));
-          
-          const tableRows = type === 'invoice'
-              ? sortedProducts.map(p => [
-                  p.name,
-                  p.quantity,
-                  formatCurrency(p.price),
-                  formatCurrency(p.price * p.quantity)
-              ])
-              : sortedProducts.map((p, index) => [
-                  index + 1,
-                  p.sku || productDetailsMap.get(p.productId)?.sku || 'N/A',
-                  p.name,
-                  p.quantity
-              ]);
-
-          pdf.autoTable({
-              head: [tableColumn],
-              body: tableRows,
-              startY: tableY
-          });
-          
-          const finalTableY = (pdf as any).lastAutoTable.finalY;
-
-          if (type === 'invoice') {
-              pdf.setFontSize(10);
-              pdf.text('Subtotal:', 140, finalTableY + 10);
-              pdf.text(formatCurrency(order.subtotal || 0), 200, finalTableY + 10, { align: 'right' });
-              pdf.text('Ongkir:', 140, finalTableY + 15);
-              pdf.text(formatCurrency(order.shippingFee || 0), 200, finalTableY + 15, { align: 'right' });
-              
-              pdf.setFontSize(12);
-              pdf.setFont('helvetica', 'bold');
-              pdf.text('Total:', 140, finalTableY + 22);
-              pdf.text(String(formatCurrency(order.total)), 200, finalTableY + 22, { align: 'right' });
-          }
-        }
-        isFirstPage = false;
-      }
-      pdf.save(`dokumen-pesanan-terpilih-${new Date().toISOString().split('T')[0]}.pdf`);
-  };
-
-  const updateOrderStatus = async (orderId: string, updates: Partial<Order>) => {
-      setIsProcessing(orderId);
-      const orderRef = doc(db, "orders", orderId);
-      try {
-          if(updates.status === 'Shipped') {
-              updates.shippedAt = serverTimestamp();
-          }
-          await updateDoc(orderRef, updates);
-          await fetchOrders();
-          toast({
-              title: "Status Pesanan Diperbarui",
-              description: `Pesanan ${orderId.substring(0,7)}... telah diperbarui.`,
-          });
-      } catch (error) {
-           console.error("Error updating order status: ", error);
-           toast({
-              variant: "destructive",
-              title: "Gagal Memperbarui Status",
-          });
-      } finally {
-          setIsProcessing(null);
-      }
-  };
-  
-  const deleteOrder = async (orderId: string) => {
-      setIsProcessing(orderId);
-      try {
-          await deleteDoc(doc(db, "orders", orderId));
-          toast({
-              title: "Pesanan Dihapus",
-              description: "Pesanan yang dibatalkan telah dihapus."
-          });
-          fetchOrders();
-      } catch (error) {
-           console.error("Error deleting order: ", error);
-           toast({ variant: "destructive", title: "Gagal Menghapus Pesanan"});
-      } finally {
-          setIsProcessing(null);
-      }
-  }
-
-
-  const handleMarkAsPaid = async (order: Order) => {
-    setIsProcessing(order.id);
-    const orderRef = doc(db, "orders", order.id);
-    try {
-        const updates: Partial<Order> = { paymentStatus: 'Paid' };
-        
-        await updateDoc(orderRef, updates);
-        await fetchOrders();
-        toast({
-            title: "Pembayaran Dikonfirmasi",
-            description: `Pesanan ${order.id.substring(0,7)}... telah ditandai lunas.`,
-        });
-
-    } catch (error) {
-        console.error("Error updating payment status: ", error);
-        toast({
-            variant: "destructive",
-            title: "Gagal Memperbarui Status",
-        });
-    } finally {
-        setIsProcessing(null);
-    }
-  };
-
-
-  const handleCancelOrder = async (order: Order) => {
+  const handleCancelOrder = useCallback(async (order: Order) => {
     setIsProcessing(order.id);
     const batch = writeBatch(db);
-
     try {
-        const orderRef = doc(db, "orders", order.id);
-        batch.update(orderRef, { status: 'Cancelled' });
-
-        // Only return stock if the order was not already cancelled
-        if (order.products && order.status !== 'Cancelled') {
-            for (const item of order.products) {
-                const productRef = doc(db, "products", item.productId);
-                const productDoc = await getDoc(productRef);
-                if (productDoc.exists()) {
-                    const currentStock = productDoc.data().stock || 0;
-                    const newStock = currentStock + item.quantity;
-                    batch.update(productRef, { stock: newStock });
-                }
-            }
-        }
-        
-        await batch.commit();
-
-        toast({
-            title: "Pesanan Dibatalkan",
-            description: "Pesanan telah dibatalkan dan stok produk telah dikembalikan.",
-        });
-
-        await fetchOrders();
-
-    } catch (error) {
-        console.error("Error cancelling order:", error);
-        toast({
-            variant: "destructive",
-            title: "Gagal Membatalkan",
-            description: "Terjadi kesalahan saat membatalkan pesanan.",
-        });
+      batch.update(doc(db, "orders", order.id), { status: "Cancelled", paymentStatus: "cancelled" });
+      for (const item of order.products ?? []) {
+        const pdoc = await getDoc(doc(db, "products", item.productId));
+        if (pdoc.exists())
+          batch.update(doc(db, "products", item.productId), { stock: (pdoc.data().stock ?? 0) + item.quantity });
+      }
+      await batch.commit();
+      toast({ title: "Pesanan dibatalkan & stok dikembalikan" });
+    } catch {
+      toast({ title: "Gagal membatalkan", variant: "destructive" });
     } finally {
-        setIsProcessing(null);
+      setIsProcessing(null);
     }
-  };
+  }, [toast]);
 
+  const deleteOrder = useCallback(async (orderId: string) => {
+    setIsProcessing(orderId);
+    try {
+      await deleteDoc(doc(db, "orders", orderId));
+      toast({ title: "Pesanan dihapus" });
+    } catch {
+      toast({ title: "Gagal menghapus", variant: "destructive" });
+    } finally {
+      setIsProcessing(null);
+    }
+  }, [toast]);
+
+  // ── Filtering ─────────────────────────────────────────────────────
 
   const filteredOrders = useMemo(() => {
-    let filtered = allOrders;
+    let base = allOrders;
 
     if (dateRange?.from || dateRange?.to) {
-        filtered = allOrders.filter(order => {
-            if (!order.date?.toDate) return false;
-            const orderDate = order.date.toDate();
-            const from = dateRange.from ? startOfDay(dateRange.from) : null;
-            const to = dateRange.to ? endOfDay(dateRange.to) : null;
-            if (from && orderDate < from) return false;
-            if (to && orderDate > to) return false;
-            return true;
-        });
+      base = base.filter((o) => {
+        if (!o.date?.toDate) return false;
+        const d = o.date.toDate();
+        if (dateRange.from && d < startOfDay(dateRange.from)) return false;
+        if (dateRange.to && d > endOfDay(dateRange.to)) return false;
+        return true;
+      });
     }
 
     if (searchTerm) {
-        const lowercasedFilter = searchTerm.toLowerCase();
-        filtered = filtered.filter(order => {
-            const customerName = order.customerDetails?.name || order.customer || '';
-            return customerName.toLowerCase().includes(lowercasedFilter) ||
-                   order.id.toLowerCase().includes(lowercasedFilter);
-        });
+      const q = searchTerm.toLowerCase();
+      base = base.filter(
+        (o) =>
+          (o.customerDetails?.name ?? o.customer ?? "").toLowerCase().includes(q) ||
+          o.id.toLowerCase().includes(q)
+      );
     }
 
-    const toProcess = filtered.filter(o => o.status === 'Pending');
-    const toShip = filtered.filter(o => o.status === 'Processing');
-    const shipped = filtered.filter(o => o.status === 'Shipped');
-    const delivered = filtered.filter(o => o.status === 'Delivered');
-    const cancelled = filtered.filter(o => o.status === 'Cancelled');
+    const statusLower = (s: string) => s.toLowerCase();
+
+    // "Belum Bayar" = pending_payment (menunggu pembayaran Midtrans)
+    const toProcess = base.filter((o) => o.paymentStatus === "pending_payment");
+
+    // "Perlu Dikirim" = LUNAS + PROCESSING (siap kirim)
+    const toShip = base.filter(
+      (o) =>
+        isPaid(o.paymentStatus) &&
+        ["processing", "Processing"].includes(o.status)
+    );
+
+    // "Dikirim" = status shipped/dikirim (kurir sudah pickup)
+    const shipped = base.filter(
+      (o) =>
+        ["shipped", "Shipped", "dikirim", "Dikirim"].includes(o.status) &&
+        !["cancelled", "failed"].includes(o.paymentStatus.toLowerCase())
+    );
+
+    // "Selesai"
+    const delivered = base.filter((o) => ["delivered", "Delivered"].includes(statusLower(o.status)));
+
+    // "Dibatalkan"
+    const cancelled = base.filter(
+      (o) =>
+        ["cancelled", "failed"].includes(o.paymentStatus.toLowerCase()) ||
+        ["cancelled", "Cancelled"].includes(o.status)
+    );
 
     return { toProcess, toShip, shipped, delivered, cancelled };
   }, [allOrders, dateRange, searchTerm]);
-  
-  const handleSelectOrder = (orderId: string, isSelected: boolean) => {
-      setSelectedOrders(prev => isSelected ? [...prev, orderId] : prev.filter(id => id !== orderId));
-  };
-  
-  const handleSelectAllInTab = (ordersInTab: Order[], isSelected: boolean) => {
-    const idsInTab = ordersInTab.map(o => o.id);
-    if (isSelected) {
-        setSelectedOrders(prev => [...new Set([...prev, ...idsInTab])]);
-    } else {
-        setSelectedOrders(prev => prev.filter(id => !idsInTab.includes(id)));
-    }
+
+  // ── Select helpers ────────────────────────────────────────────────
+
+  const handleSelectOrder = (orderId: string, checked: boolean) =>
+    setSelectedOrders((p) => checked ? [...p, orderId] : p.filter((id) => id !== orderId));
+
+  const handleSelectAll = (orders: Order[], checked: boolean) => {
+    const ids = orders.map((o) => o.id);
+    setSelectedOrders((p) => checked ? [...new Set([...p, ...ids])] : p.filter((id) => !ids.includes(id)));
   };
 
-  const renderMainActionButton = (order: Order, tabName: string) => {
+  // ── Main action button per tab ────────────────────────────────────
+
+  function renderMainAction(order: Order, tabName: string) {
+    if (isProcessing === order.id) return <Loader2 className="h-4 w-4 animate-spin" />;
+
     switch (tabName) {
-        case 'toProcess':
-            return (
-                <Button size="sm" onClick={() => updateOrderStatus(order.id, { status: 'Processing' })}>
-                    Proses Pesanan
-                </Button>
-            );
-        case 'toShip':
-            return (
-                <Button size="sm" onClick={() => updateOrderStatus(order.id, { status: 'Shipped' })}>
-                    Atur Pengiriman
-                </Button>
-            );
-        case 'shipped':
-             return (
-                 <Button size="sm" onClick={() => updateOrderStatus(order.id, { status: 'Delivered' })}>
-                    Tandai Selesai
-                </Button>
-            );
-        case 'delivered':
-             return (
-                <Button size="sm" onClick={() => generatePdf(order.id, 'invoice')}>Lihat Rincian</Button>
-            );
-        case 'cancelled':
-             return (
-                <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                        <Button size="sm" variant="destructive">
-                            <Trash2 className="mr-2 h-4 w-4"/> Hapus
-                        </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                        <AlertDialogHeader><AlertDialogTitle>Anda Yakin?</AlertDialogTitle><AlertDialogDescription>Tindakan ini akan menghapus data pesanan ini secara permanen. Aksi ini tidak dapat diurungkan.</AlertDialogDescription></AlertDialogHeader>
-                        <AlertDialogFooter><AlertDialogCancel>Batal</AlertDialogCancel><AlertDialogAction onClick={() => deleteOrder(order.id)} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">Ya, Hapus Permanen</AlertDialogAction></AlertDialogFooter>
-                    </AlertDialogContent>
-                </AlertDialog>
-            );
-        default:
-            return null;
+      case "toProcess":
+        return null;
+
+      case "toShip":
+        // Sudah diproses ke Biteship → Lihat Rincian
+        if (order.biteshipOrderId) {
+          return <ShipmentDetailDialog order={order} />;
+        }
+        // Pickup / COD tanpa Biteship
+        if (!order.biteshipCourierCode && order.shippingMethod?.toLowerCase() === "pickup") {
+          return (
+            <Button size="sm" onClick={() => updateOrderStatus(order.id, { status: "Shipped", shippedAt: serverTimestamp() })}>
+              <Truck className="mr-2 h-4 w-4" />Tandai Diambil
+            </Button>
+          );
+        }
+        // Proses via Biteship
+        return (
+          <ProcessShipmentDialog
+            order={order}
+            onSuccess={() => { /* onSnapshot otomatis refresh */ }}
+          />
+        );
+
+      case "shipped":
+        return <ShipmentDetailDialog order={order} />;
+
+      case "delivered":
+        return (
+          <Button size="sm" variant="outline" onClick={() => generatePdf(order.id, "invoice")}>
+            <FileText className="mr-2 h-4 w-4" />Download Faktur
+          </Button>
+        );
+
+      case "cancelled":
+        return (
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button size="sm" variant="destructive">
+                <Trash2 className="mr-2 h-4 w-4" />Hapus
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Hapus pesanan ini?</AlertDialogTitle>
+                <AlertDialogDescription>Data pesanan akan dihapus permanen.</AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Batal</AlertDialogCancel>
+                <AlertDialogAction onClick={() => deleteOrder(order.id)} className="bg-destructive hover:bg-destructive/90">
+                  Ya, Hapus
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        );
+
+      default:
+        return null;
     }
   }
 
+  // ── Render order list ─────────────────────────────────────────────
 
-  const renderOrderList = (orders: Order[], tabName: string) => {
+  function renderOrderList(orders: Order[], tabName: string) {
     if (loading) {
-        return <div className="text-center p-8"><Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" /></div>
+      return <div className="flex justify-center p-8"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>;
     }
 
-    const selectedInTabCount = orders.filter(o => selectedOrders.includes(o.id)).length;
-    const isAllInTabSelected = orders.length > 0 && selectedInTabCount === orders.length;
+    const selCount = orders.filter((o) => selectedOrders.includes(o.id)).length;
+    const allSel = orders.length > 0 && selCount === orders.length;
 
     return (
-        <div className="space-y-4">
-             <div className="flex items-center gap-4 px-2 py-2 bg-muted/50 rounded-md">
-                <Checkbox
-                    id={`select-all-${tabName}`}
-                    checked={isAllInTabSelected}
-                    onCheckedChange={(checked) => handleSelectAllInTab(orders, !!checked)}
-                    aria-label={`Pilih semua di tab ${tabName}`}
-                />
-                <Label htmlFor={`select-all-${tabName}`} className="text-sm font-medium">
-                    Pilih Semua ({selectedInTabCount} / {orders.length} terpilih)
-                </Label>
-            </div>
-            <div className="space-y-4 mt-4">
-                {orders.length > 0 ? (
-                    orders.map(order => (
-                        <Card key={order.id} className="overflow-hidden">
-                            <CardHeader className="p-4 bg-card flex-row items-center justify-between border-b">
-                                <div className="flex items-center gap-4">
-                                    <Checkbox 
-                                        checked={selectedOrders.includes(order.id)}
-                                        onCheckedChange={(checked) => handleSelectOrder(order.id, !!checked)}
-                                    />
-                                    <div className="flex items-center gap-2">
-                                        <User className="h-4 w-4 text-muted-foreground"/>
-                                        <span className="font-semibold">{order.customerDetails?.name || order.customer}</span>
-                                    </div>
-                                    <a href={`https://wa.me/${order.customerDetails?.whatsapp}`} target="_blank" rel="noopener noreferrer">
-                                        <MessageSquare className="h-4 w-4 text-primary cursor-pointer"/>
-                                    </a>
-                                </div>
-                                <div className="text-sm text-muted-foreground">
-                                    No. Pesanan <span className="font-medium text-foreground">{order.id.substring(0, 12)}...</span>
-                                </div>
-                            </CardHeader>
-                            <CardContent className="p-0">
-                            <div className="grid grid-cols-12 gap-4 p-4">
-                                <div className="col-span-12 md:col-span-5 flex flex-col gap-2">
-                                    {order.products.slice(0, 2).map(product => (
-                                        <div key={product.productId} className="flex items-center gap-3">
-                                                <Image src={product.imageUrl || product.image || "https://placehold.co/64x64.png"} alt={product.name} width={40} height={40} className="rounded-md border"/>
-                                                <div>
-                                                    <p className="text-sm font-medium line-clamp-1">{product.name}</p>
-                                                    <p className="text-xs text-muted-foreground">x{product.quantity}</p>
-                                                </div>
-                                        </div>
-                                    ))}
-                                        {order.products.length > 2 && (
-                                            <p className="text-xs text-muted-foreground pl-2">+ {order.products.length - 2} produk lainnya</p>
-                                        )}
-                                </div>
-                                <div className="col-span-4 md:col-span-2 text-sm">
-                                    <p className="text-muted-foreground">Total Pesanan</p>
-                                    <p className="font-semibold">{formatCurrency(order.total)}</p>
-                                     <Badge variant={order.paymentStatus === 'Paid' ? 'default' : 'destructive'} className="mt-1">
-                                        {order.paymentStatus === 'Paid' ? 'Lunas' : 'Belum Lunas'}
-                                     </Badge>
-                                </div>
-                               <div className="col-span-4 md:col-span-2 text-sm">
-                                    <p className="text-muted-foreground">Status</p>
-                                    <Badge variant="outline" className={
-                                          order.status === 'Delivered' ? 'text-green-600 border-green-600' :
-                                          order.status === 'Shipped' ? 'text-blue-600 border-blue-600' :
-                                          order.status === 'Processing' ? 'text-yellow-600 border-yellow-600' : 
-                                          order.status === 'Cancelled' ? 'text-red-600 border-red-600' : 'text-gray-600 border-gray-600'
-                                      }>{order.status}</Badge>
-                                      {order.date?.toDate && (
-                                        <p className="text-xs text-muted-foreground mt-1">
-                                            {format(order.date.toDate(), 'dd/MM/yy HH:mm')}
-                                        </p>
-                                      )}
-                                </div>
-                               <div className="col-span-4 md:col-span-3 text-sm">
-                                    <p className="text-muted-foreground">Jasa Kirim</p>
-                                    <p className="font-semibold">{order.shippingMethod === 'pickup' ? 'Jemput Sendiri' : (order.shippingMethod || 'Ekspedisi')}</p>
-                                </div>
-                           </div>
-                        </CardContent>
-                        <CardFooter className="p-4 bg-muted/30 flex-wrap gap-2 justify-end">
-                              {isProcessing === order.id ? <Loader2 className="h-4 w-4 animate-spin"/> : (
-                                <>
-                                  <DropdownMenu>
-                                        <DropdownMenuTrigger asChild>
-                                            <Button variant="outline" size="sm">
-                                                <MoreHorizontal className="h-4 w-4"/>
-                                                <span className="sr-only">Aksi lainnya</span>
-                                            </Button>
-                                        </DropdownMenuTrigger>
-                                        <DropdownMenuContent align="end">
-                                            <DropdownMenuLabel>Aksi Cepat</DropdownMenuLabel>
-                                            <DropdownMenuSeparator/>
-                                             {order.paymentStatus === 'Unpaid' && (
-                                                <DropdownMenuItem onClick={() => handleMarkAsPaid(order)}>
-                                                    <CheckCircle className="mr-2 h-4 w-4" /> Tandai Lunas
-                                                </DropdownMenuItem>
-                                            )}
-                                             <DropdownMenuItem onClick={() => generatePdf(order.id, 'invoice')}>
-                                                <Printer className="mr-2 h-4 w-4" /> Download Faktur
-                                             </DropdownMenuItem>
-                                             <DropdownMenuItem onClick={() => generatePdf(order.id, 'packingSlip')}>
-                                                <FileBox className="mr-2 h-4 w-4" /> Download Pesanan
-                                             </DropdownMenuItem>
-                                             <EditOrderDialog order={order} onOrderUpdated={fetchOrders} />
-                                             {(order.status === 'Pending' || order.status === 'Processing') && (
-                                                <AlertDialog>
-                                                    <AlertDialogTrigger asChild>
-                                                        <button className="relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none transition-colors text-destructive focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 w-full">
-                                                            <XCircle className="mr-2 h-4 w-4" /> Batalkan Pesanan
-                                                        </button>
-                                                    </AlertDialogTrigger>
-                                                    <AlertDialogContent>
-                                                        <AlertDialogHeader><AlertDialogTitle>Anda Yakin?</AlertDialogTitle><AlertDialogDescription>Tindakan ini akan membatalkan pesanan dan mengembalikan stok produk. Aksi ini tidak dapat diurungkan.</AlertDialogDescription></AlertDialogHeader>
-                                                        <AlertDialogFooter><AlertDialogCancel>Tidak</AlertDialogCancel><AlertDialogAction onClick={() => handleCancelOrder(order)} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">Ya, Batalkan</AlertDialogAction></AlertDialogFooter>
-                                                    </AlertDialogContent>
-                                                </AlertDialog>
-                                             )}
-                                        </DropdownMenuContent>
-                                    </DropdownMenu>
-
-                                    <Dialog>
-                                        <DialogTrigger asChild>
-                                             <Button variant="outline" size="sm">
-                                                <FileText className="mr-2 h-4 w-4" /> Lihat Bukti Bayar
-                                             </Button>
-                                        </DialogTrigger>
-                                        <DialogContent className="max-w-lg max-h-[90vh] flex flex-col">
-                                            <DialogHeader>
-                                                <DialogTitle>Bukti Pembayaran #{order.id}</DialogTitle>
-                                                <DialogDescription>Pelanggan: {order.customer}</DialogDescription>
-                                            </DialogHeader>
-                                            <div className="flex-1 overflow-auto flex items-center justify-center">
-                                                {order.paymentProofUrl ? (
-                                                    <Link href={order.paymentProofUrl} target="_blank" rel="noopener noreferrer">
-                                                        <Image src={order.paymentProofUrl} alt={`Payment proof for ${order.id}`} width={500} height={500} className="rounded-md object-contain border" />
-                                                    </Link>
-                                                ) : (<p className="text-center text-muted-foreground py-8">Belum ada bukti pembayaran.</p>)}
-                                            </div>
-                                        </DialogContent>
-                                    </Dialog>
-                                     {renderMainActionButton(order, tabName)}
-                                </>
-                              )}
-                        </CardFooter>
-                    </Card>
-                ))
-                ) : (
-                    <div className="text-center p-8 border rounded-lg">
-                        <Package className="mx-auto h-12 w-12 text-muted-foreground"/>
-                        <p className="mt-4 text-muted-foreground">Tidak ada pesanan di kategori ini.</p>
-                    </div>
-                )}
-            </div>
+      <div className="space-y-4">
+        {/* Select all bar */}
+        <div className="flex items-center gap-3 px-2 py-2 bg-muted/50 rounded-md">
+          <Checkbox id={`sa-${tabName}`} checked={allSel}
+            onCheckedChange={(c) => handleSelectAll(orders, !!c)} />
+          <Label htmlFor={`sa-${tabName}`} className="text-sm font-medium cursor-pointer">
+            Pilih Semua ({selCount}/{orders.length})
+          </Label>
         </div>
-    );
-  };
 
+        {orders.length === 0 ? (
+          <div className="text-center py-12 border rounded-lg">
+            <Package className="mx-auto h-12 w-12 text-muted-foreground/40 mb-3" />
+            <p className="text-muted-foreground">Tidak ada pesanan di kategori ini.</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {orders.map((order) => (
+              <Card key={order.id} className="overflow-hidden">
+                {/* Clickable area: header + content → detail page */}
+                <div
+                  className="cursor-pointer hover:bg-muted/30 transition-colors"
+                  onClick={() => router.push(`/dashboard/orders/${order.id}`)}
+                >
+                {/* Header: checkbox + order ID + tanggal */}
+                <CardHeader className="p-4 pb-3 flex-row items-center justify-between border-b gap-2">
+                  <div className="flex items-center gap-3">
+                    <Checkbox
+                      checked={selectedOrders.includes(order.id)}
+                      onCheckedChange={(c) => handleSelectOrder(order.id, !!c)}
+                    />
+                    <span className="text-sm font-bold">
+                      #{order.id.substring(0, 8).toUpperCase()}
+                    </span>
+                  </div>
+                  {order.date?.toDate && (
+                    <span className="text-xs text-muted-foreground">
+                      {format(order.date.toDate(), "dd MMM yyyy, HH:mm", { locale: dateFnsLocaleId })}
+                    </span>
+                  )}
+                </CardHeader>
+
+                <CardContent className="p-4 space-y-3">
+                  {/* Nama customer + WA */}
+                  <div className="flex items-center gap-2">
+                    <User className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <span className="text-sm font-medium">
+                      {order.customerDetails?.name ?? order.customer}
+                    </span>
+                    <a
+                      href={`https://wa.me/${order.customerDetails?.whatsapp ?? ""}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <MessageSquare className="h-4 w-4 text-green-600 hover:text-green-700" />
+                    </a>
+                  </div>
+
+                  {/* Produk (maks 2) */}
+                  <div className="space-y-1.5">
+                    {order.products.slice(0, 2).map((p) => (
+                      <div key={p.productId} className="flex items-center gap-3">
+                        <Image
+                          src={p.imageUrl || p.image || "https://placehold.co/40x40.png"}
+                          alt={p.name} width={36} height={36}
+                          className="rounded border object-cover shrink-0"
+                        />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium line-clamp-1">{p.name}</p>
+                          <p className="text-xs text-muted-foreground">×{p.quantity}</p>
+                        </div>
+                      </div>
+                    ))}
+                    {order.products.length > 2 && (
+                      <p className="text-xs text-muted-foreground pl-1">
+                        +{order.products.length - 2} produk lainnya
+                      </p>
+                    )}
+                  </div>
+
+                  <Separator />
+
+                  {/* Badges + total */}
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <PaymentBadge status={order.paymentStatus} />
+                      <StatusBadge status={order.status} />
+                      {(order.biteshipCourierName || order.shippingMethod) && (
+                        <span className="text-xs text-muted-foreground flex items-center gap-1">
+                          <Truck className="h-3 w-3" />
+                          {order.biteshipCourierName ?? order.shippingMethod}
+                          {order.biteshipServiceName ? ` · ${order.biteshipServiceName}` : ""}
+                        </span>
+                      )}
+                    </div>
+                    <p className="font-bold text-sm">{formatCurrency(order.total)}</p>
+                  </div>
+
+                  {/* No. resi (jika ada) */}
+                  {order.waybillId && (
+                    <p className="text-xs font-mono bg-muted px-2 py-1 rounded inline-flex items-center gap-1">
+                      <Package className="h-3 w-3" />{order.waybillId}
+                    </p>
+                  )}
+                  {order.biteshipOrderId && !order.waybillId && isInstantCourier(order.biteshipCourierCode) && (
+                    <span className="text-xs text-orange-600 border border-orange-300 bg-orange-50 px-2 py-0.5 rounded">
+                      Mencari driver...
+                    </span>
+                  )}
+                </CardContent>
+                </div>{/* end clickable area */}
+
+                {/* Footer actions */}
+                <CardFooter className="p-4 bg-muted/20 flex flex-wrap gap-2 justify-end border-t">
+                  {isProcessing === order.id ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <>
+                      {/* Dropdown: aksi lainnya */}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="outline" size="sm">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuLabel>Aksi Lainnya</DropdownMenuLabel>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={() => generatePdf(order.id, "invoice")}>
+                            <Printer className="mr-2 h-4 w-4" />Download Faktur
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => generatePdf(order.id, "packingSlip")}>
+                            <FileBox className="mr-2 h-4 w-4" />Dokumen Pesanan
+                          </DropdownMenuItem>
+                          <EditOrderDialog order={order} onOrderUpdated={() => {}} />
+                          {!["cancelled", "Cancelled"].includes(order.status) && (
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <button className="relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-destructive focus:bg-accent w-full">
+                                  <XCircle className="mr-2 h-4 w-4" />Batalkan Pesanan
+                                </button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Batalkan pesanan ini?</AlertDialogTitle>
+                                  <AlertDialogDescription>Stok produk akan dikembalikan.</AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Batal</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => handleCancelOrder(order)} className="bg-destructive hover:bg-destructive/90">
+                                    Ya, Batalkan
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+
+                      {/* Bukti bayar */}
+                      <Dialog>
+                        <DialogTrigger asChild>
+                          <Button variant="outline" size="sm">
+                            <FileText className="mr-2 h-4 w-4" />Bukti Bayar
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="max-w-md">
+                          <DialogHeader>
+                            <DialogTitle>Bukti Pembayaran</DialogTitle>
+                            <DialogDescription>{order.customerDetails?.name ?? order.customer}</DialogDescription>
+                          </DialogHeader>
+                          {order.paymentProofUrl ? (
+                            <Link href={order.paymentProofUrl} target="_blank" rel="noopener noreferrer">
+                              <Image src={order.paymentProofUrl} alt="Bukti bayar" width={400} height={400} className="rounded border object-contain w-full" />
+                            </Link>
+                          ) : (
+                            <p className="text-center text-muted-foreground py-8">Belum ada bukti pembayaran.</p>
+                          )}
+                        </DialogContent>
+                      </Dialog>
+
+                      {/* Tombol aksi utama */}
+                      {renderMainAction(order, tabName)}
+                    </>
+                  )}
+                </CardFooter>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── Render ────────────────────────────────────────────────────────
 
   return (
     <Card>
       <CardHeader>
         <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
-            <div>
-                 <CardTitle>Pesanan</CardTitle>
-                 <CardDescription>Lihat dan kelola semua pesanan</CardDescription>
+          <div>
+            <CardTitle>Pesanan</CardTitle>
+            <CardDescription>Kelola semua pesanan pelanggan secara real-time</CardDescription>
+          </div>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
+            {/* Search */}
+            <div className="relative flex-1 sm:flex-auto">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input placeholder="Cari No. Pesanan / Nama..." className="pl-8 w-full"
+                value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
             </div>
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
-                 <div className="relative flex-1 sm:flex-auto">
-                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                        placeholder="Cari No. Pesanan / Nama..."
-                        className="pl-8 w-full"
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                    />
-                </div>
-                <Popover>
-                    <PopoverTrigger asChild>
-                        <Button id="date" variant={"outline"} className="w-full sm:w-[280px] justify-start text-left font-normal">
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {dateRange?.from ? (dateRange.to ? `${format(dateRange.from, "LLL dd, y")} - ${format(dateRange.to, "LLL dd, y")}` : format(dateRange.from, "LLL dd, y")) : (<span>Pilih rentang tanggal</span>)}
-                        </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="end">
-                        <Calendar initialFocus mode="range" defaultMonth={dateRange?.from} selected={dateRange} onSelect={setDateRange} numberOfMonths={2} />
-                    </PopoverContent>
-                </Popover>
-                 <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                        <Button disabled={selectedOrders.length === 0} className="w-full sm:w-auto">
-                            <Download className="mr-2 h-4 w-4" />
-                            Download ({selectedOrders.length})
-                        </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                        <DropdownMenuLabel>Pilih Tipe Dokumen</DropdownMenuLabel>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onSelect={() => generateBulkDocuments('invoice')}>
-                            <Printer className="mr-2 h-4 w-4" />
-                            Faktur Penjualan
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onSelect={() => generateBulkDocuments('packingSlip')}>
-                            <FileBox className="mr-2 h-4 w-4" />
-                            Dokumen Pesanan
-                        </DropdownMenuItem>
-                    </DropdownMenuContent>
-                </DropdownMenu>
-            </div>
+            {/* Date range */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className="w-full sm:w-64 justify-start text-left font-normal">
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {dateRange?.from
+                    ? dateRange.to
+                      ? `${format(dateRange.from, "dd/MM/yy")} – ${format(dateRange.to, "dd/MM/yy")}`
+                      : format(dateRange.from, "dd/MM/yy")
+                    : "Pilih rentang tanggal"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="end">
+                <Calendar mode="range" defaultMonth={dateRange?.from}
+                  selected={dateRange} onSelect={setDateRange} numberOfMonths={2} />
+              </PopoverContent>
+            </Popover>
+            {/* Bulk download */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button disabled={selectedOrders.length === 0} className="w-full sm:w-auto">
+                  <Download className="mr-2 h-4 w-4" />Download ({selectedOrders.length})
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel>Pilih Tipe Dokumen</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => generateBulkDocuments("invoice")}>
+                  <Printer className="mr-2 h-4 w-4" />Faktur Penjualan
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => generateBulkDocuments("packingSlip")}>
+                  <FileBox className="mr-2 h-4 w-4" />Dokumen Pesanan
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </CardHeader>
+
       <CardContent>
-          <Tabs defaultValue="toProcess">
-            <TabsList className="h-auto p-1.5 w-full grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-1.5">
-                <TabsTrigger value="toProcess">
-                    Belum Proses <Badge className="ml-2">{filteredOrders.toProcess.length}</Badge>
-                </TabsTrigger>
-                <TabsTrigger value="toShip">
-                    Perlu Dikirim <Badge className="ml-2">{filteredOrders.toShip.length}</Badge>
-                </TabsTrigger>
-                <TabsTrigger value="shipped">
-                    Dikirim <Badge className="ml-2">{filteredOrders.shipped.length}</Badge>
-                </TabsTrigger>
-                <TabsTrigger value="delivered">
-                    Selesai <Badge className="ml-2">{filteredOrders.delivered.length}</Badge>
-                </TabsTrigger>
-                 <TabsTrigger value="cancelled">
-                    Dibatalkan <Badge className="ml-2">{filteredOrders.cancelled.length}</Badge>
-                </TabsTrigger>
-            </TabsList>
-            <TabsContent value="toProcess" className="mt-4">
-                {renderOrderList(filteredOrders.toProcess, 'toProcess')}
-            </TabsContent>
-            <TabsContent value="toShip" className="mt-4">
-                {renderOrderList(filteredOrders.toShip, 'toShip')}
-            </TabsContent>
-            <TabsContent value="shipped" className="mt-4">
-                 {renderOrderList(filteredOrders.shipped, 'shipped')}
-            </TabsContent>
-            <TabsContent value="delivered" className="mt-4">
-                 {renderOrderList(filteredOrders.delivered, 'delivered')}
-            </TabsContent>
-            <TabsContent value="cancelled" className="mt-4">
-                {renderOrderList(filteredOrders.cancelled, 'cancelled')}
-            </TabsContent>
-          </Tabs>
+        <Tabs defaultValue="toShip">
+          <TabsList className="h-auto p-1.5 w-full grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-1.5">
+            <TabsTrigger value="toProcess">
+              Belum Bayar <Badge className="ml-1.5">{filteredOrders.toProcess.length}</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="toShip">
+              Perlu Dikirim <Badge className="ml-1.5">{filteredOrders.toShip.length}</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="shipped">
+              Dikirim <Badge className="ml-1.5">{filteredOrders.shipped.length}</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="delivered">
+              Selesai <Badge className="ml-1.5">{filteredOrders.delivered.length}</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="cancelled">
+              Dibatalkan <Badge className="ml-1.5">{filteredOrders.cancelled.length}</Badge>
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="toProcess" className="mt-4">
+            {renderOrderList(filteredOrders.toProcess, "toProcess")}
+          </TabsContent>
+          <TabsContent value="toShip" className="mt-4">
+            {renderOrderList(filteredOrders.toShip, "toShip")}
+          </TabsContent>
+          <TabsContent value="shipped" className="mt-4">
+            {renderOrderList(filteredOrders.shipped, "shipped")}
+          </TabsContent>
+          <TabsContent value="delivered" className="mt-4">
+            {renderOrderList(filteredOrders.delivered, "delivered")}
+          </TabsContent>
+          <TabsContent value="cancelled" className="mt-4">
+            {renderOrderList(filteredOrders.cancelled, "cancelled")}
+          </TabsContent>
+        </Tabs>
       </CardContent>
     </Card>
-  )
+  );
 }
-
-    
