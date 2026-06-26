@@ -184,8 +184,10 @@ function getStatusInfo(status: string) {
   if (s === "processing") return { title: "Perlu Dikirim",       icon: RefreshCw,    color: "text-blue-600",   bg: "bg-blue-50 border-blue-200" };
   if (s === "shipped" || s === "dikirim")
                           return { title: "Dalam Pengiriman",    icon: Truck,        color: "text-cyan-600",   bg: "bg-cyan-50 border-cyan-200" };
-  if (s === "delivered")  return { title: "Pesanan Selesai",     icon: PackageCheck, color: "text-green-600",  bg: "bg-green-50 border-green-200" };
-  if (s === "cancelled")  return { title: "Pesanan Dibatalkan",  icon: XCircle,      color: "text-red-600",    bg: "bg-red-50 border-red-200" };
+  if (s === "delivered" || s === "selesai")
+                          return { title: "Pesanan Selesai",     icon: PackageCheck, color: "text-green-600",  bg: "bg-green-50 border-green-200" };
+  if (s === "cancelled" || s === "dibatalkan")
+                          return { title: "Pesanan Dibatalkan",  icon: XCircle,      color: "text-red-600",    bg: "bg-red-50 border-red-200" };
   return { title: `Status: ${status}`, icon: AlertCircle, color: "text-gray-600", bg: "bg-gray-50 border-gray-200" };
 }
 
@@ -544,8 +546,8 @@ export default function OrderDetailPage() {
   const isPendingPayment = order.paymentStatus === "pending_payment";
   const isProcessing = isPaid(order.paymentStatus) && sLower === "processing";
   const isShipped = ["shipped", "dikirim"].includes(sLower);
-  const isDelivered = ["delivered"].includes(sLower);
-  const isCancelled = ["cancelled"].includes(sLower) || ["cancelled", "failed"].includes(order.paymentStatus.toLowerCase());
+  const isDelivered = ["delivered", "selesai"].includes(sLower);
+  const isCancelled = ["cancelled", "dibatalkan"].includes(sLower) || ["cancelled", "failed"].includes(order.paymentStatus.toLowerCase());
   const hasBiteship = !!order.biteshipOrderId;
   const instant = isInstantCourier(order.biteshipCourierCode);
   const subtotal = order.subtotal || order.products.reduce((s, p) => s + p.price * p.quantity, 0);

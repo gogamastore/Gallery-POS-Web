@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import {
   collection,
@@ -134,11 +134,14 @@ function PaymentBadge({ status }: { status: string }) {
 function StatusBadge({ status }: { status: string }) {
   const s = status.toLowerCase();
   const map: Record<string, { label: string; cls: string }> = {
-    pending:    { label: "Belum Proses", cls: "bg-orange-100 text-orange-700 border-orange-300" },
-    processing: { label: "Diproses",    cls: "bg-blue-100 text-blue-700 border-blue-300" },
-    shipped:    { label: "Dikirim",     cls: "bg-cyan-100 text-cyan-700 border-cyan-300" },
-    delivered:  { label: "Selesai",     cls: "bg-green-100 text-green-700 border-green-300" },
-    cancelled:  { label: "Dibatalkan",  cls: "bg-red-100 text-red-700 border-red-300" },
+    pending:    { label: "Menunggu",    cls: "bg-yellow-100 text-yellow-700 border-yellow-300" },
+    processing: { label: "Diproses",   cls: "bg-blue-100 text-blue-700 border-blue-300" },
+    shipped:    { label: "Dikirim",    cls: "bg-cyan-100 text-cyan-700 border-cyan-300" },
+    dikirim:    { label: "Dikirim",    cls: "bg-cyan-100 text-cyan-700 border-cyan-300" },
+    delivered:  { label: "Selesai",    cls: "bg-green-100 text-green-700 border-green-300" },
+    selesai:    { label: "Selesai",    cls: "bg-green-100 text-green-700 border-green-300" },
+    cancelled:  { label: "Dibatalkan", cls: "bg-red-100 text-red-700 border-red-300" },
+    dibatalkan: { label: "Dibatalkan", cls: "bg-red-100 text-red-700 border-red-300" },
   };
   const cfg = map[s] ?? { label: status, cls: "bg-gray-100 text-gray-700 border-gray-300" };
   return (
@@ -266,13 +269,13 @@ function filterOrders(orders: Order[], tabKey: TabKey): Order[] {
     case "processing":
       return orders.filter((o) => o.status === "processing");
     case "shipped":
-      return orders.filter((o) => o.status === "shipped");
+      return orders.filter((o) => ["shipped", "dikirim", "Dikirim"].includes(o.status));
     case "delivered":
-      return orders.filter((o) => o.status === "delivered");
+      return orders.filter((o) => ["delivered", "Selesai", "selesai"].includes(o.status));
     case "cancelled":
       return orders.filter((o) =>
         ["cancelled", "failed"].includes(o.paymentStatus) ||
-        o.status === "cancelled"
+        ["cancelled", "Dibatalkan", "dibatalkan"].includes(o.status)
       );
     default:
       return orders;

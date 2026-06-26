@@ -1015,14 +1015,16 @@ export default function OrdersPage() {
         !["cancelled", "failed"].includes(o.paymentStatus.toLowerCase())
     );
 
-    // "Selesai"
-    const delivered = base.filter((o) => ["delivered", "Delivered"].includes(statusLower(o.status)));
+    // "Selesai" — "Selesai" untuk data lama sebelum normalisasi status
+    const delivered = base.filter((o) =>
+      ["delivered", "Delivered", "Selesai", "selesai"].includes(statusLower(o.status))
+    );
 
-    // "Dibatalkan"
+    // "Dibatalkan" — "Dibatalkan" untuk data lama sebelum normalisasi status
     const cancelled = base.filter(
       (o) =>
         ["cancelled", "failed"].includes(o.paymentStatus.toLowerCase()) ||
-        ["cancelled", "Cancelled"].includes(o.status)
+        ["cancelled", "Cancelled", "Dibatalkan", "dibatalkan"].includes(o.status)
     );
 
     return { toProcess, toShip, shipped, delivered, cancelled };

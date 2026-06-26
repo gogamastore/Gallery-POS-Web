@@ -111,9 +111,12 @@ function getStatusInfo(status: string) {
   const s = status.toLowerCase();
   if (s === "pending")    return { title: "Menunggu Diproses",   icon: Clock,        color: "text-orange-600",  bg: "bg-orange-50 border-orange-200" };
   if (s === "processing") return { title: "Sedang Diproses",     icon: RefreshCw,    color: "text-blue-600",    bg: "bg-blue-50 border-blue-200" };
-  if (s === "shipped")    return { title: "Dalam Pengiriman",    icon: Truck,        color: "text-cyan-600",    bg: "bg-cyan-50 border-cyan-200" };
-  if (s === "delivered")  return { title: "Pesanan Selesai",     icon: PackageCheck, color: "text-green-600",   bg: "bg-green-50 border-green-200" };
-  if (s === "cancelled")  return { title: "Pesanan Dibatalkan",  icon: XCircle,      color: "text-red-600",     bg: "bg-red-50 border-red-200" };
+  if (s === "shipped" || s === "dikirim")
+                          return { title: "Dalam Pengiriman",    icon: Truck,        color: "text-cyan-600",    bg: "bg-cyan-50 border-cyan-200" };
+  if (s === "delivered" || s === "selesai")
+                          return { title: "Pesanan Selesai",     icon: PackageCheck, color: "text-green-600",   bg: "bg-green-50 border-green-200" };
+  if (s === "cancelled" || s === "dibatalkan")
+                          return { title: "Pesanan Dibatalkan",  icon: XCircle,      color: "text-red-600",     bg: "bg-red-50 border-red-200" };
   return { title: `Status: ${status}`, icon: AlertCircle, color: "text-gray-600", bg: "bg-gray-50 border-gray-200" };
 }
 
@@ -319,8 +322,7 @@ export default function OrderDetailPage() {
   const StatusIcon = statusInfo.icon;
   const isPendingPayment = order.paymentStatus === "pending_payment";
   const hasBiteship = !!(order.biteshipOrderId);
-  const isShipped = order.status === "shipped";
-  const isDelivered = order.status === "delivered";
+  const isShipped = ["shipped", "dikirim"].includes(order.status);
   const subtotal = order.subtotal ?? order.products.reduce((s, p) => s + p.price * p.quantity, 0);
   const shippingFee = order.shippingFee ?? (order.total - subtotal);
 
