@@ -39,7 +39,7 @@ declare module "jspdf" {
 
 const createBiteshipOrderFn = httpsCallable<
   { orderId: string },
-  { success: boolean; biteshipOrderId: string; waybillId?: string; trackingUrl?: string; status?: string }
+  { success: boolean; biteshipOrderId: string; courierTrackingId?: string; waybillId?: string; trackingUrl?: string; status?: string }
 >(functions, "createBiteshipOrder");
 
 const trackBiteshipOrderFn = httpsCallable<
@@ -47,6 +47,7 @@ const trackBiteshipOrderFn = httpsCallable<
   {
     hasDelivery: boolean;
     biteshipOrderId?: string;
+    courierTrackingId?: string;
     waybillId?: string;
     status?: string;
     courierName?: string;
@@ -101,6 +102,8 @@ interface Order {
   shippedAt?: any;
   products: OrderProduct[];
   biteshipOrderId?: string;
+  biteshipCourierTrackingId?: string;
+  biteshipCourierRoutingCode?: string;
   biteshipCourierCode?: string;
   biteshipCourierName?: string;
   biteshipServiceCode?: string;
@@ -231,31 +234,96 @@ function InfoRow({ label, value, valueClass }: { label: string; value: string; v
 
 // ── Cetak Resi ─────────────────────────────────────────────────────
 
-function printWaybill(order: Order) {
-  const w = window.open("", "_blank", "width=420,height=600");
+interface StoreInfo { name: string; phone: string; address: string; }
+
+function printWaybill(order: Order, storeInfo?: StoreInfo) {
+  const w = window.open("", "_blank", "width=520,height=780");
   if (!w) return;
-  const rows = order.products
-    .map((p) => `<tr><td>${p.name}</td><td style="text-align:center">${p.quantity}</td></tr>`)
-    .join("");
-  w.document.write(`<!DOCTYPE html>
-<html lang="id"><head><meta charset="UTF-8"><title>Resi</title>
-<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:12px;padding:16px}
-h2{font-size:15px;margin-bottom:8px;border-bottom:2px solid #000;padding-bottom:4px}
-.s{margin-bottom:10px}.lb{font-weight:bold;color:#555;font-size:10px;text-transform:uppercase}
-.v{font-size:13px;margin-top:2px}.resi{font-size:22px;font-weight:bold;letter-spacing:2px;border:2px dashed #000;padding:6px 10px;display:inline-block;margin:4px 0}
-table{width:100%;border-collapse:collapse;margin-top:4px}td,th{border:1px solid #ddd;padding:4px 6px;font-size:11px}th{background:#f5f5f5;font-weight:bold}
-@media print{body{padding:4px}}</style></head>
-<body>
-<h2>Resi Pengiriman — Gogama Store</h2>
-<div class="s"><div class="lb">No. Resi</div><div class="resi">${order.waybillId || "-"}</div></div>
-<div class="s"><div class="lb">Kurir</div><div class="v">${order.biteshipCourierName ?? order.biteshipCourierCode ?? "-"}${order.biteshipServiceName ? " — " + order.biteshipServiceName : ""}</div></div>
-<div class="s"><div class="lb">Kepada</div><div class="v"><strong>${order.customerDetails?.name ?? order.customer}</strong></div>
-<div class="v">${order.customerDetails?.address ?? "-"}</div>
-<div class="v">Telp/WA: ${order.customerDetails?.whatsapp ?? order.customerDetails?.phone ?? "-"}</div></div>
-<div class="s"><div class="lb">Isi Paket</div>
-<table><thead><tr><th>Produk</th><th>Qty</th></tr></thead><tbody>${rows}</tbody></table></div>
-<div class="s"><div class="lb">No. Pesanan</div><div class="v">#${order.id}</div></div>
-<br><button onclick="window.print()" style="width:100%;padding:8px;font-size:13px;cursor:pointer;">🖨️ Cetak / Print</button>
+
+  const waybillId   = order.waybillId ?? "";
+  const trackingId  = order.biteshipCourierTrackingId ?? "";
+  const trackingUrl = trackingId ? `https://track.biteship.com/${trackingId}` : (order.deliveryTrackingUrl ?? "");
+  const refId        = order.biteshipOrderId ?? order.id;
+  const courierLabel = [order.biteshipCourierName ?? order.biteshipCourierCode, order.biteshipServiceName ?? order.biteshipServiceCode].filter(Boolean).join(" ");
+  const serviceName  = order.biteshipServiceName ?? order.biteshipServiceCode ?? "-";
+  const routingCode  = order.biteshipCourierRoutingCode ?? "";
+  const shippingFee  = order.shippingFee ? new Intl.NumberFormat("id-ID").format(order.shippingFee) : "-";
+  const totalQty     = order.products.reduce((s, p) => s + p.quantity, 0);
+  const totalWeight  = (order.products.reduce((s, p) => s + p.quantity * 200, 0) / 1000).toFixed(1);
+  const itemsList    = order.products.map(p => p.quantity + "x " + p.name).join("<br>");
+  const catatan      = order.deliveryNotes || "Order #" + order.id + " dari Gogama Store";
+  const logoUrl      = window.location.origin + "/gogamalogo.png";
+  const bcW = waybillId ? "JsBarcode('#bcW','"+waybillId+"',{format:'CODE128',width:2,height:60,displayValue:false,margin:4});" : "";
+  const bcR = refId    ? "JsBarcode('#bcR','"+refId+"',{format:'CODE128',width:1.2,height:35,displayValue:false,margin:2});" : "";
+
+  const storeName  = storeInfo?.name    ?? "Gogama Store";
+  const storePhone = storeInfo?.phone   ?? "";
+  const storeAddr  = storeInfo?.address ?? "";
+
+  w.document.write(`<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8">
+<title>Resi - ${waybillId || order.id}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;font-size:11px;width:105mm;padding:3mm}
+.hdr{border:2px solid #000;padding:7px 10px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.logo{height:48px;object-fit:contain;max-width:55mm}
+.courier{text-align:right;font-weight:bold;font-size:11px;color:#333;word-break:break-word;max-width:40mm}
+.bc{border:1px solid #000;border-top:none;padding:7px 8px;text-align:center}
+#bcW{width:100%;height:65px}#bcR{width:100%;height:38px}
+.resi-lbl{font-size:13px;font-weight:bold;margin-top:3px}
+.svc{border:1px solid #000;border-top:none;padding:5px 9px;text-align:center;font-size:10px;line-height:1.5}
+.ref-row{border:1px solid #000;border-top:none;display:flex}
+.ref-l{flex:1;padding:5px 7px;border-right:1px solid #000}
+.ref-r{width:42%;padding:5px 7px}
+.lbl{font-weight:bold;font-size:10px;margin-bottom:2px}
+.val{font-size:10px;word-break:break-all;margin-top:2px}
+.addr-row{border:1px solid #000;border-top:none;display:flex;min-height:75px}
+.addr{flex:1;padding:5px 7px}.addr:first-child{border-right:1px solid #000}
+.anm{font-weight:bold;font-size:11px;margin:2px 0}
+.aln{font-size:10px;margin-top:1px;line-height:1.35}
+.items{border:1px solid #000;border-top:none;padding:5px 7px;font-size:10px;line-height:1.4}
+.ir{display:flex;gap:5px;margin-bottom:1px}.ik{font-weight:bold;min-width:75px;flex-shrink:0}
+.ftr{border:1px solid #000;border-top:none;padding:5px;text-align:center;font-size:10px}
+.ftr a{color:#0066cc;word-break:break-all;text-decoration:none}
+.pbtn{width:100%;padding:8px;font-size:13px;cursor:pointer;margin-top:7px;background:#1a73e8;color:#fff;border:none;border-radius:4px;font-weight:bold}
+@media print{.pbtn{display:none}@page{size:A6;margin:3mm}}
+</style></head><body>
+
+<div class="hdr">
+  <img src="${logoUrl}" class="logo" alt="Gogama" onerror="this.style.display='none'">
+  <div class="courier">${courierLabel || "-"}</div>
+</div>
+<div class="bc"><svg id="bcW"></svg><p class="resi-lbl">Nomor Resi - ${waybillId || "-"}</p></div>
+<div class="svc">
+  <p>Ongkos Kirim: Rp. ${shippingFee}</p>
+  <p>Jenis Layanan - ${serviceName}${routingCode ? ". Kode Rute - " + routingCode : ""}</p>
+</div>
+<div class="ref-row">
+  <div class="ref-l"><p class="lbl">Reference Number</p><svg id="bcR"></svg><p class="val">${refId}</p></div>
+  <div class="ref-r"><p class="lbl">Quantity: &nbsp;${totalQty} Pcs</p><br><p class="lbl">Weight: &nbsp;&nbsp;${totalWeight} Kg</p></div>
+</div>
+<div class="addr-row">
+  <div class="addr">
+    <p class="lbl">Alamat Penerima:</p>
+    <p class="anm">${order.customerDetails?.name ?? order.customer}</p>
+    <p class="aln">${order.customerDetails?.whatsapp ?? order.customerDetails?.phone ?? "-"}</p>
+    <p class="aln">${order.customerDetails?.address ?? "-"}</p>
+  </div>
+  <div class="addr">
+    <p class="lbl">Alamat Pengirim:</p>
+    <p class="anm">${storeName}</p>
+    <p class="aln">${storePhone}</p>
+    <p class="aln">${storeAddr}</p>
+  </div>
+</div>
+<div class="items">
+  <div class="ir"><span class="ik">Jenis Barang :</span><span>${itemsList}</span></div>
+  <div class="ir"><span class="ik">Catatan :</span><span>${catatan}</span></div>
+</div>
+<div class="ftr">${trackingUrl ? "<a href=\""+trackingUrl+"\">"+trackingUrl+"</a>" : "<p>Gogama Store</p>"}</div>
+<button class="pbtn" onclick="window.print()">🖨️ Cetak / Print</button>
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"><\/script>
+<script>window.addEventListener('load',function(){try{${bcW}${bcR}}catch(e){}});<\/script>
 </body></html>`);
   w.document.close();
 }
@@ -269,6 +337,19 @@ export default function OrderDetailPage() {
 
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
+  const [storeInfo, setStoreInfo] = useState<StoreInfo>({ name: "Gogama Store", phone: "", address: "" });
+
+  useEffect(() => {
+    getDoc(doc(db, "settings", "store")).then((snap) => {
+      if (!snap.exists()) return;
+      const d = snap.data();
+      setStoreInfo({
+        name: d.storeName || "Gogama Store",
+        phone: d.storePhone || "",
+        address: [d.address, d.city, d.province, d.postalCode].filter(Boolean).join(", "),
+      });
+    }).catch(() => {});
+  }, []);
 
   // Shipment processing
   const [isProcessingShipment, setIsProcessingShipment] = useState(false);
@@ -307,6 +388,10 @@ export default function OrderDetailPage() {
       const res = await createBiteshipOrderFn({ orderId: order.id });
       if (res.data.waybillId) {
         toast({ title: `Resi berhasil dibuat: ${res.data.waybillId}` });
+        printWaybill(
+          { ...order, waybillId: res.data.waybillId, biteshipCourierTrackingId: res.data.courierTrackingId },
+          storeInfo,
+        );
       } else {
         toast({ title: isInstantCourier(order.biteshipCourierCode)
           ? "Driver sedang dicari oleh Biteship."
@@ -522,14 +607,14 @@ export default function OrderDetailPage() {
                 {isTracking ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <MapPin className="mr-2 h-4 w-4" />}
                 {isTracking ? "Memuat..." : "Lacak Pengiriman"}
               </Button>
-              {order.waybillId && !instant && (
-                <Button variant="outline" onClick={() => printWaybill(order)}>
+              {order.waybillId && (
+                <Button variant="outline" onClick={() => printWaybill(order, storeInfo)}>
                   <Printer className="mr-2 h-4 w-4" />Cetak Resi
                 </Button>
               )}
-              {order.deliveryTrackingUrl && (
+              {(order.biteshipCourierTrackingId || order.deliveryTrackingUrl) && (
                 <Button variant="outline" asChild>
-                  <a href={order.deliveryTrackingUrl} target="_blank" rel="noopener noreferrer">
+                  <a href={order.biteshipCourierTrackingId ? `https://track.biteship.com/${order.biteshipCourierTrackingId}` : order.deliveryTrackingUrl} target="_blank" rel="noopener noreferrer">
                     <ExternalLink className="mr-2 h-4 w-4" />Tracking
                   </a>
                 </Button>
@@ -547,13 +632,13 @@ export default function OrderDetailPage() {
             {isTracking ? "Memuat..." : "Lacak Pengiriman"}
           </Button>
           {order.waybillId && (
-            <Button variant="outline" onClick={() => printWaybill(order)}>
+            <Button variant="outline" onClick={() => printWaybill(order, storeInfo)}>
               <Printer className="mr-2 h-4 w-4" />Cetak Resi
             </Button>
           )}
-          {order.deliveryTrackingUrl && (
+          {(order.biteshipCourierTrackingId || order.deliveryTrackingUrl) && (
             <Button variant="outline" asChild>
-              <a href={order.deliveryTrackingUrl} target="_blank" rel="noopener noreferrer">
+              <a href={order.biteshipCourierTrackingId ? `https://track.biteship.com/${order.biteshipCourierTrackingId}` : order.deliveryTrackingUrl} target="_blank" rel="noopener noreferrer">
                 <ExternalLink className="mr-2 h-4 w-4" />Tracking
               </a>
             </Button>
@@ -574,7 +659,7 @@ export default function OrderDetailPage() {
             <FileBox className="mr-2 h-4 w-4" />Dokumen Pesanan
           </Button>
           {order.waybillId && (
-            <Button variant="outline" onClick={() => printWaybill(order)}>
+            <Button variant="outline" onClick={() => printWaybill(order, storeInfo)}>
               <Printer className="mr-2 h-4 w-4" />Cetak Resi
             </Button>
           )}
@@ -651,10 +736,12 @@ export default function OrderDetailPage() {
           <InfoRow label="No. Resi" value="Belum tersedia (mencari driver...)" />
         ) : null}
         {order.biteshipStatus && <InfoRow label="Status Kurir" value={order.biteshipStatus} />}
-        {order.deliveryTrackingUrl && (
+        {(order.biteshipCourierTrackingId || order.deliveryTrackingUrl) && (
           <div className="flex gap-3">
             <span className="text-sm text-muted-foreground w-40 shrink-0">Link Tracking</span>
-            <a href={order.deliveryTrackingUrl} target="_blank" rel="noopener noreferrer"
+            <a
+              href={order.biteshipCourierTrackingId ? `https://track.biteship.com/${order.biteshipCourierTrackingId}` : order.deliveryTrackingUrl}
+              target="_blank" rel="noopener noreferrer"
               className="text-sm text-primary underline flex items-center gap-1">
               Buka Tracking <ExternalLink className="h-3 w-3" />
             </a>
@@ -836,7 +923,7 @@ export default function OrderDetailPage() {
               <FileBox className="mr-2 h-4 w-4" />Packing Slip
             </Button>
             {order.waybillId && (
-              <Button variant="outline" size="sm" onClick={() => printWaybill(order)}>
+              <Button variant="outline" size="sm" onClick={() => printWaybill(order, storeInfo)}>
                 <Printer className="mr-2 h-4 w-4" />Cetak Resi
               </Button>
             )}
