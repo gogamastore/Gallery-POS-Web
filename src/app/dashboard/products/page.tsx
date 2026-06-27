@@ -1,10 +1,9 @@
-
-
 "use client";
 
 export const dynamic = 'force-dynamic';
 
 import Image from "next/image"
+import { useRouter } from "next/navigation"
 import {
   Card,
   CardContent,
@@ -22,14 +21,6 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet"
-import {
     Dialog,
     DialogContent,
     DialogDescription,
@@ -40,30 +31,20 @@ import {
 } from "@/components/ui/dialog"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button"
-import { PlusCircle, MoreHorizontal, Edit, Settings, ArrowUp, ArrowDown, Upload, FileDown, Loader2, Search, ChevronLeft, ChevronRight, Eye, Trash2, ArrowUpDown, History } from "lucide-react"
+import { PlusCircle, ArrowUp, ArrowDown, Upload, FileDown, Loader2, Search, ChevronLeft, ChevronRight, Trash2, ChevronRight as ChevronRightIcon } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox";
-import { Textarea } from "@/components/ui/textarea"
-import { collection, getDocs, addDoc, serverTimestamp, doc, updateDoc, writeBatch, query, where, deleteDoc, orderBy } from "firebase/firestore";
-import { db, storage } from "@/lib/firebase";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { collection, getDocs, serverTimestamp, doc, writeBatch, deleteDoc } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import * as XLSX from "xlsx";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
-import { format } from "date-fns";
-import { id as dateFnsLocaleId } from "date-fns/locale";
 import { BarcodeScannerDialog } from "@/components/barcode-scanner-dialog";
 
-
-interface ProductCategory {
-  id: string;
-  name: string;
-}
 
 interface Product {
   id: string;
@@ -73,17 +54,10 @@ interface Product {
   price: number; // Normalized to number
   purchasePrice?: number;
   stock: number;
+  weightGram?: number;
   image: string;
   'data-ai-hint': string;
   description?: string;
-}
-
-interface PurchaseHistoryItem {
-    id: string;
-    purchaseDate: any;
-    quantity: number;
-    purchasePrice: number;
-    supplierName: string;
 }
 
 const parseCurrency = (value: string | number): number => {
@@ -104,288 +78,6 @@ const formatCurrency = (amount: number) => {
 };
 
 
-function AddCategoryDialog({ onCategoryAdded }: { onCategoryAdded: (newCategory: ProductCategory) => void }) {
-    const [isOpen, setIsOpen] = useState(false);
-    const [loading, setLoading] = useState(false);
-    const [name, setName] = useState("");
-    const { toast } = useToast();
-
-    const handleAddCategory = async () => {
-        if (!name.trim()) {
-            toast({ variant: 'destructive', title: 'Nama kategori tidak boleh kosong' });
-            return;
-        }
-        setLoading(true);
-        try {
-            const docRef = await addDoc(collection(db, "product_categories"), {
-                name: name.trim(),
-                createdAt: serverTimestamp(),
-            });
-            onCategoryAdded({ id: docRef.id, name: name.trim() });
-            toast({ title: 'Kategori baru ditambahkan' });
-            setIsOpen(false);
-            setName("");
-        } catch (error) {
-            console.error("Error adding category:", error);
-            toast({ variant: 'destructive', title: 'Gagal menambah kategori' });
-        } finally {
-            setLoading(false);
-        }
-    };
-    
-    return (
-        <Dialog open={isOpen} onOpenChange={setIsOpen}>
-            <DialogTrigger asChild>
-                <button className="w-full text-left p-2 text-sm text-primary hover:bg-accent rounded-md">
-                    + Tambah Kategori Baru
-                </button>
-            </DialogTrigger>
-            <DialogContent>
-                <DialogHeader>
-                    <DialogTitle>Tambah Kategori Produk Baru</DialogTitle>
-                </DialogHeader>
-                <div className="py-4">
-                    <Label htmlFor="category-name">Nama Kategori</Label>
-                    <Input id="category-name" value={name} onChange={(e) => setName(e.target.value)} />
-                </div>
-                <DialogFooter>
-                    <Button variant="outline" onClick={() => setIsOpen(false)}>Batal</Button>
-                    <Button onClick={handleAddCategory} disabled={loading}>{loading ? 'Menyimpan...' : 'Simpan Kategori'}</Button>
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
-    );
-}
-
-
-function ProductForm({ product, onSave, onOpenChange }: { product?: Product, onSave: () => void, onOpenChange: (open: boolean) => void }) {
-    const { toast } = useToast();
-    const [loading, setLoading] = useState(false);
-    const [imageFile, setImageFile] = useState<File | null>(null);
-    const [imagePreview, setImagePreview] = useState<string | null>(product?.image || null);
-    const [categories, setCategories] = useState<ProductCategory[]>([]);
-    const [categorySearch, setCategorySearch] = useState("");
-
-
-    const [formData, setFormData] = useState({
-        name: product?.name || "",
-        sku: product?.sku || "",
-        purchasePrice: product?.purchasePrice || 0,
-        price: product ? parseCurrency(product.price) : 0,
-        stock: product?.stock || 0,
-        category: product?.category || "",
-        description: product?.description || "",
-        image: product?.image || "",
-    });
-
-    useEffect(() => {
-        const fetchCategories = async () => {
-            const snapshot = await getDocs(collection(db, "product_categories"));
-            const fetchedCategories = snapshot.docs.map(doc => ({ id: doc.id, name: doc.data().name }));
-            // Sort categories alphabetically by name
-            fetchedCategories.sort((a, b) => a.name.localeCompare(b.name));
-            setCategories(fetchedCategories);
-        };
-        fetchCategories();
-    }, []);
-    
-    const filteredCategories = useMemo(() => {
-        return categories.filter(cat => cat.name.toLowerCase().includes(categorySearch.toLowerCase()));
-    }, [categories, categorySearch]);
-
-
-    const handleCategoryAdded = (newCategory: ProductCategory) => {
-        const updatedCategories = [...categories, newCategory].sort((a, b) => a.name.localeCompare(b.name));
-        setCategories(updatedCategories);
-        setFormData(prev => ({...prev, category: newCategory.name }));
-    };
-
-    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-        const { id, value } = e.target;
-        const numericFields = ['purchasePrice', 'price', 'stock'];
-        setFormData(prev => ({ ...prev, [id]: numericFields.includes(id) ? Number(value) : value }));
-    };
-
-    const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files && e.target.files[0]) {
-            const file = e.target.files[0];
-            setImageFile(file);
-            setImagePreview(URL.createObjectURL(file));
-        }
-    };
-
-
-    const handleSaveProduct = async () => {
-        if (!formData.name || !formData.sku || formData.price <= 0) {
-            toast({
-                variant: "destructive",
-                title: "Data Tidak Lengkap",
-                description: "Nama produk, SKU, dan harga jual harus diisi.",
-            });
-            return;
-        }
-        setLoading(true);
-        try {
-            let imageUrl = formData.image;
-
-            if (imageFile) {
-                const storageRef = ref(storage, `product_images/${Date.now()}_${imageFile.name}`);
-                await uploadBytes(storageRef, imageFile);
-                imageUrl = await getDownloadURL(storageRef);
-            }
-            
-            const dataToSave: any = {
-                name: formData.name,
-                sku: formData.sku,
-                purchasePrice: formData.purchasePrice,
-                price: new Intl.NumberFormat("id-ID", {
-                    style: "currency",
-                    currency: "IDR",
-                    minimumFractionDigits: 0,
-                }).format(formData.price),
-                category: formData.category,
-                description: formData.description,
-                image: imageUrl,
-            };
-
-            if (!dataToSave.image) {
-                dataToSave.image = `https://placehold.co/400x400.png`;
-                dataToSave['data-ai-hint'] = 'product item';
-            }
-
-
-            if (product) { // Editing existing product - stock is not updated here
-                const productRef = doc(db, "products", product.id);
-                await updateDoc(productRef, dataToSave);
-                toast({
-                    title: "Produk Berhasil Diperbarui",
-                    description: `${formData.name} telah diperbarui.`,
-                });
-            } else { // Adding new product
-                await addDoc(collection(db, "products"), {
-                    ...dataToSave,
-                    stock: formData.stock || 0, // Use stock from form for new products
-                    createdAt: serverTimestamp(),
-                });
-                toast({
-                    title: "Produk Berhasil Ditambahkan",
-                    description: `${formData.name} telah ditambahkan ke daftar produk.`,
-                });
-            }
-            onSave();
-            onOpenChange(false);
-        } catch (error) {
-            console.error("Error saving product:", error);
-            toast({
-                variant: "destructive",
-                title: `Gagal ${product ? 'Memperbarui' : 'Menambahkan'} Produk`,
-                description: "Terjadi kesalahan saat menyimpan data ke server.",
-            });
-        } finally {
-            setLoading(false);
-        }
-    };
-    
-    return (
-        <>
-            <SheetHeader>
-                <SheetTitle>{product ? 'Edit Produk' : 'Tambah Produk Baru'}</SheetTitle>
-                <SheetDescription>
-                    {product ? 'Ubah detail produk yang sudah ada.' : 'Isi detail produk baru yang akan ditambahkan ke toko Anda.'}
-                </SheetDescription>
-            </SheetHeader>
-            <div className="grid gap-4 py-4">
-                 <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="name" className="text-right">Nama Produk</Label>
-                    <Input id="name" value={formData.name} onChange={handleInputChange} className="col-span-3" />
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="sku" className="text-right">SKU</Label>
-                    <Input id="sku" value={formData.sku} onChange={handleInputChange} className="col-span-3" />
-                </div>
-                 <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="category" className="text-right">Kategori</Label>
-                     <Select onValueChange={(value) => setFormData(prev => ({ ...prev, category: value }))} defaultValue={formData.category}>
-                        <SelectTrigger className="col-span-3">
-                            <SelectValue placeholder="Pilih Kategori Produk" />
-                        </SelectTrigger>
-                        <SelectContent>
-                             <div className="p-2">
-                                <Input 
-                                    placeholder="Cari kategori..." 
-                                    className="w-full h-8"
-                                    value={categorySearch}
-                                    onChange={(e) => setCategorySearch(e.target.value)}
-                                />
-                            </div>
-                            {filteredCategories.map(cat => (
-                                <SelectItem key={cat.id} value={cat.name}>{cat.name}</SelectItem>
-                            ))}
-                            <Separator className="my-2"/>
-                            <AddCategoryDialog onCategoryAdded={handleCategoryAdded} />
-                        </SelectContent>
-                    </Select>
-                </div>
-                 <div className="grid grid-cols-4 items-start gap-4">
-                    <Label htmlFor="image" className="text-right pt-2">Gambar</Label>
-                    <div className="col-span-3 space-y-2">
-                        {imagePreview && <Image src={imagePreview} alt="Preview" width={100} height={100} className="rounded-md object-cover" />}
-                        <Input id="image" type="file" accept="image/*" onChange={handleImageChange} className="col-span-3" />
-                    </div>
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="purchasePrice" className="text-right">Harga Beli</Label>
-                    <Input id="purchasePrice" type="number" value={formData.purchasePrice} onChange={handleInputChange} className="col-span-3" placeholder="Harga modal produk" />
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="price" className="text-right">Harga Jual</Label>
-                    <Input id="price" type="number" value={formData.price} onChange={handleInputChange} className="col-span-3" placeholder="Harga yang akan tampil di toko" />
-                </div>
-                 <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="stock" className="text-right">Stok Awal</Label>
-                     <Input 
-                        id="stock" 
-                        type="number" 
-                        value={formData.stock}
-                        onChange={handleInputChange} 
-                        className="col-span-3" 
-                        disabled={!!product} // Disable if editing existing product
-                        placeholder={product ? "Atur via Manajemen Stok" : "Jumlah stok awal"}
-                    />
-                </div>
-                <div className="grid grid-cols-4 items-start gap-4">
-                    <Label htmlFor="description" className="text-right pt-2">Deskripsi</Label>
-                    <Textarea id="description" value={formData.description} onChange={handleInputChange} className="col-span-3" />
-                </div>
-            </div>
-            <div className="flex justify-end">
-                <Button onClick={handleSaveProduct} disabled={loading}>
-                  {loading ? "Menyimpan..." : "Simpan Produk"}
-                </Button>
-            </div>
-        </>
-    )
-}
-
-function ProductSheet({ onProductAdded }: { onProductAdded: () => void }) {
-  const [isOpen, setIsOpen] = useState(false);
-  return (
-    <Sheet open={isOpen} onOpenChange={setIsOpen}>
-      <SheetTrigger asChild>
-        <Button size="sm" className="h-8 gap-1">
-          <PlusCircle className="h-3.5 w-3.5" />
-          <span className="sr-only sm:not-sr-only sm:whitespace-nowrap">
-            Tambah Produk
-          </span>
-        </Button>
-      </SheetTrigger>
-      <SheetContent>
-        <ProductForm onSave={onProductAdded} onOpenChange={setIsOpen} />
-      </SheetContent>
-    </Sheet>
-  )
-}
-
 function BulkImportDialog({ onImportSuccess }: { onImportSuccess: () => void }) {
     const [isOpen, setIsOpen] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
@@ -400,8 +92,8 @@ function BulkImportDialog({ onImportSuccess }: { onImportSuccess: () => void }) 
 
     const handleDownloadTemplate = () => {
         const worksheet = XLSX.utils.aoa_to_sheet([
-            ["name", "sku", "price", "purchasePrice", "stock", "category", "description"],
-            ["Kaos Polos", "KP-001", 120000, 75000, 100, "Pakaian", "Kaos polos bahan katun combed 30s."],
+            ["name", "sku", "price", "purchasePrice", "stock", "weightGram", "category", "description"],
+            ["Kaos Polos", "KP-001", 120000, 75000, 100, 250, "Pakaian", "Kaos polos bahan katun combed 30s."],
         ]);
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, "Produk");
@@ -423,7 +115,7 @@ function BulkImportDialog({ onImportSuccess }: { onImportSuccess: () => void }) 
                 const sheetName = workbook.SheetNames[0];
                 const worksheet = workbook.Sheets[sheetName];
                 const json: any[] = XLSX.utils.sheet_to_json(worksheet);
-                
+
                 if (json.length === 0) throw new Error("File Excel kosong atau format salah.");
 
                 // --- Start of new category logic ---
@@ -431,7 +123,7 @@ function BulkImportDialog({ onImportSuccess }: { onImportSuccess: () => void }) 
                 const categoriesSnapshot = await getDocs(collection(db, 'product_categories'));
                 const existingCategories = new Set(categoriesSnapshot.docs.map(doc => doc.data().name));
                 const newCategories = categoriesFromExcel.filter(cat => !existingCategories.has(cat));
-                
+
                 if (newCategories.length > 0) {
                     const categoryBatch = writeBatch(db);
                     newCategories.forEach(catName => {
@@ -448,7 +140,7 @@ function BulkImportDialog({ onImportSuccess }: { onImportSuccess: () => void }) 
 
                 json.forEach((row) => {
                     if (!row.name || !row.sku || !row.price) return; // Skip invalid rows
-                    
+
                     const productRef = doc(collection(db, "products"));
                     productBatch.set(productRef, {
                         name: row.name,
@@ -456,6 +148,7 @@ function BulkImportDialog({ onImportSuccess }: { onImportSuccess: () => void }) 
                         price: new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(row.price || 0),
                         purchasePrice: Number(row.purchasePrice) || 0,
                         stock: Number(row.stock) || 0,
+                        weightGram: Number(row.weightGram) || 0,
                         category: row.category || "Uncategorized",
                         description: row.description || "",
                         image: 'https://placehold.co/400x400.png',
@@ -464,13 +157,13 @@ function BulkImportDialog({ onImportSuccess }: { onImportSuccess: () => void }) 
                     });
                     addedCount++;
                 });
-                
+
                 if (addedCount > 0) {
                     await productBatch.commit();
                 }
 
-                toast({ 
-                    title: 'Impor Selesai', 
+                toast({
+                    title: 'Impor Selesai',
                     description: `${addedCount} produk berhasil ditambahkan.`
                 });
 
@@ -530,124 +223,14 @@ function BulkImportDialog({ onImportSuccess }: { onImportSuccess: () => void }) 
     );
 }
 
-function ImageViewer({ src, alt }: { src: string, alt: string }) {
-  return (
-    <Dialog>
-        <DialogTrigger asChild>
-            <Image
-                alt={alt}
-                className="aspect-square rounded-md object-cover cursor-pointer hover:ring-2 hover:ring-primary transition-all"
-                height="64"
-                src={src || 'https://placehold.co/64x64.png'}
-                width="64"
-            />
-        </DialogTrigger>
-        <DialogContent className="max-w-xl">
-             <DialogHeader>
-                <DialogTitle className="sr-only">{alt}</DialogTitle>
-                <DialogDescription className="sr-only">Pratinjau gambar untuk {alt}</DialogDescription>
-             </DialogHeader>
-            <Image
-                alt={alt}
-                className="rounded-lg object-contain"
-                height="800"
-                src={src || 'https://placehold.co/800x800.png'}
-                width="800"
-            />
-        </DialogContent>
-    </Dialog>
-  );
-}
-
-function ProductLogDialog({ product }: { product: Product }) {
-    const [isOpen, setIsOpen] = useState(false);
-    const [loading, setLoading] = useState(false);
-    const [history, setHistory] = useState<PurchaseHistoryItem[]>([]);
-
-    const fetchPurchaseHistory = useCallback(async () => {
-        if (!isOpen) return;
-        setLoading(true);
-        try {
-            const q = query(
-                collection(db, "purchase_history"),
-                where("productId", "==", product.id),
-                orderBy("purchaseDate", "desc")
-            );
-            const querySnapshot = await getDocs(q);
-            const historyData = querySnapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            } as PurchaseHistoryItem));
-            setHistory(historyData);
-        } catch (error) {
-            console.error("Error fetching purchase history:", error);
-        } finally {
-            setLoading(false);
-        }
-    }, [isOpen, product.id]);
-
-    useEffect(() => {
-        fetchPurchaseHistory();
-    }, [fetchPurchaseHistory]);
-    
-    return (
-        <Dialog open={isOpen} onOpenChange={setIsOpen}>
-            <DialogTrigger asChild>
-                <Button variant="secondary" className="w-full justify-start">
-                    <History className="mr-2 h-4 w-4" /> Log Produk
-                </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-2xl">
-                <DialogHeader>
-                    <DialogTitle>Log Produk: {product.name}</DialogTitle>
-                    <DialogDescription>
-                        Riwayat pembelian untuk produk ini.
-                    </DialogDescription>
-                </DialogHeader>
-                <div className="max-h-[60vh] overflow-y-auto">
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Tanggal Beli</TableHead>
-                                <TableHead>Supplier</TableHead>
-                                <TableHead className="text-right">Jumlah</TableHead>
-                                <TableHead className="text-right">Harga Beli</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {loading ? (
-                                <TableRow><TableCell colSpan={4} className="h-24 text-center">Memuat riwayat...</TableCell></TableRow>
-                            ) : history.length > 0 ? (
-                                history.map(item => (
-                                    <TableRow key={item.id}>
-                                        <TableCell>
-                                            {item.purchaseDate ? format(item.purchaseDate.toDate(), 'dd MMM yyyy', { locale: dateFnsLocaleId }) : 'N/A'}
-                                        </TableCell>
-                                        <TableCell>{item.supplierName}</TableCell>
-                                        <TableCell className="text-right">{item.quantity}</TableCell>
-                                        <TableCell className="text-right">{formatCurrency(item.purchasePrice)}</TableCell>
-                                    </TableRow>
-                                ))
-                            ) : (
-                                <TableRow><TableCell colSpan={4} className="h-24 text-center">Tidak ada riwayat pembelian.</TableCell></TableRow>
-                            )}
-                        </TableBody>
-                    </Table>
-                </div>
-            </DialogContent>
-        </Dialog>
-    );
-}
-
 
 export default function ProductsPage() {
+  const router = useRouter();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
-  const [editingProduct, setEditingProduct] = useState<Product | undefined>(undefined);
-  const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
-  
+
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(20);
   const { toast } = useToast();
@@ -681,8 +264,8 @@ export default function ProductsPage() {
   const sortProducts = (productsToSort: Product[], config: { key: string; direction: string; }) => {
     return [...productsToSort].sort((a, b) => {
         if (config.key === 'name') {
-            return config.direction === 'asc' 
-                ? a.name.localeCompare(b.name) 
+            return config.direction === 'asc'
+                ? a.name.localeCompare(b.name)
                 : b.name.localeCompare(a.name);
         }
         if (config.key === 'stock') {
@@ -716,36 +299,6 @@ export default function ProductsPage() {
 
   const totalPages = Math.ceil(sortedAndFilteredProducts.length / itemsPerPage);
 
-
-  const handleEditClick = (product: Product) => {
-    setEditingProduct(product);
-    setIsSheetOpen(true);
-  };
-  
-  const handleSheetOpenChange = (open: boolean) => {
-      setIsSheetOpen(open);
-      if (!open) {
-          setEditingProduct(undefined);
-      }
-  }
-
-  const handleDeleteProduct = async (productId: string) => {
-    try {
-        await deleteDoc(doc(db, "products", productId));
-        toast({
-            title: "Produk Dihapus",
-            description: "Produk telah berhasil dihapus dari database.",
-        });
-        fetchProducts(); // Refresh the product list
-    } catch (error) {
-        console.error("Error deleting product:", error);
-        toast({
-            variant: "destructive",
-            title: "Gagal Menghapus Produk",
-            description: "Terjadi kesalahan saat menghapus produk.",
-        });
-    }
-  };
 
   const handleDeleteSelectedProducts = async () => {
     if (selectedProducts.length === 0) return;
@@ -790,7 +343,7 @@ export default function ProductsPage() {
 
   const isAllOnPageSelected = paginatedProducts.length > 0 && selectedProducts.length === paginatedProducts.length;
 
-  
+
   const toggleSortDirection = (key: string) => {
     setSortConfig(prev => {
         if (prev.key === key) {
@@ -832,7 +385,6 @@ export default function ProductsPage() {
 
 
   return (
-    <>
     <Card>
         <CardHeader>
             <div className="flex items-center justify-between">
@@ -868,7 +420,12 @@ export default function ProductsPage() {
                         </AlertDialog>
                     )}
                     <BulkImportDialog onImportSuccess={fetchProducts} />
-                    <ProductSheet onProductAdded={fetchProducts} />
+                    <Button size="sm" className="h-8 gap-1" onClick={() => router.push('/dashboard/products/new')}>
+                        <PlusCircle className="h-3.5 w-3.5" />
+                        <span className="sr-only sm:not-sr-only sm:whitespace-nowrap">
+                            Tambah Produk
+                        </span>
+                    </Button>
                 </div>
             </div>
             {renderSortControls()}
@@ -892,7 +449,7 @@ export default function ProductsPage() {
                         <TableHead className="hidden md:table-cell">Stok</TableHead>
                         <TableHead className="text-right hidden sm:table-cell">Harga Beli</TableHead>
                         <TableHead className="text-right">Harga Jual</TableHead>
-                        <TableHead className="w-[50px] text-right">Aksi</TableHead>
+                        <TableHead className="w-[40px]"><span className="sr-only">Buka</span></TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -902,16 +459,27 @@ export default function ProductsPage() {
                             </TableRow>
                         ) : paginatedProducts.length > 0 ? (
                             paginatedProducts.map((product) => (
-                                <TableRow key={product.id} data-state={selectedProducts.includes(product.id) && "selected"}>
-                                    <TableCell>
-                                            <Checkbox
+                                <TableRow
+                                    key={product.id}
+                                    data-state={selectedProducts.includes(product.id) && "selected"}
+                                    className="cursor-pointer"
+                                    onClick={() => router.push(`/dashboard/products/${product.id}`)}
+                                >
+                                    <TableCell onClick={(e) => e.stopPropagation()}>
+                                        <Checkbox
                                             checked={selectedProducts.includes(product.id)}
                                             onCheckedChange={(checked) => handleSelectProduct(product.id, !!checked)}
                                             aria-label={`Pilih produk ${product.name}`}
                                         />
                                     </TableCell>
                                     <TableCell>
-                                        <ImageViewer src={product.image} alt={product.name}/>
+                                        <Image
+                                            alt={product.name}
+                                            className="aspect-square rounded-md object-cover"
+                                            height={64}
+                                            width={64}
+                                            src={product.image || 'https://placehold.co/64x64.png'}
+                                        />
                                     </TableCell>
                                     <TableCell className="font-medium">{product.name}</TableCell>
                                     <TableCell className="hidden md:table-cell">
@@ -924,75 +492,8 @@ export default function ProductsPage() {
                                     </TableCell>
                                     <TableCell className="text-right hidden sm:table-cell">{formatCurrency(product.purchasePrice || 0)}</TableCell>
                                     <TableCell className="text-right">{formatCurrency(product.price)}</TableCell>
-                                    <TableCell className="text-right">
-                                        <Dialog>
-                                            <DialogTrigger asChild>
-                                                <Button variant="outline" size="sm">
-                                                    <Eye className="mr-2 h-4 w-4"/>
-                                                    Lihat
-                                                </Button>
-                                            </DialogTrigger>
-                                            <DialogContent className="sm:max-w-md">
-                                                <DialogHeader>
-                                                    <DialogTitle>Aksi untuk: {product.name}</DialogTitle>
-                                                    <DialogDescription>Detail produk dan aksi yang bisa dilakukan.</DialogDescription>
-                                                </DialogHeader>
-                                                
-                                                <div className="py-4 space-y-2 text-sm">
-                                                    <div className="flex justify-between">
-                                                        <span className="text-muted-foreground">SKU</span>
-                                                        <span className="font-medium">{product.sku}</span>
-                                                    </div>
-                                                    <div className="flex justify-between">
-                                                        <span className="text-muted-foreground">Kategori</span>
-                                                        <span className="font-medium">{product.category}</span>
-                                                    </div>
-                                                    <div className="flex justify-between">
-                                                        <span className="text-muted-foreground">Stok Saat Ini</span>
-                                                        <span className="font-medium">{product.stock}</span>
-                                                    </div>
-                                                    <div className="flex justify-between">
-                                                        <span className="text-muted-foreground">Harga Beli</span>
-                                                        <span className="font-medium">{formatCurrency(product.purchasePrice || 0)}</span>
-                                                    </div>
-                                                        <div className="flex justify-between">
-                                                        <span className="text-muted-foreground">Harga Jual</span>
-                                                        <span className="font-medium">{formatCurrency(product.price)}</span>
-                                                    </div>
-                                                        <div className="space-y-1">
-                                                        <span className="text-muted-foreground">Deskripsi</span>
-                                                        <p className="font-medium p-2 bg-muted rounded-md">{product.description || 'Tidak ada deskripsi.'}</p>
-                                                    </div>
-                                                </div>
-
-                                                <Separator />
-                                                <div className="grid grid-cols-1 gap-2 py-2">
-                                                    <Button variant="outline" className="w-full justify-start" onClick={() => handleEditClick(product)}>
-                                                        <Edit className="mr-2 h-4 w-4"/> Edit Produk
-                                                    </Button>
-                                                    <ProductLogDialog product={product} />
-                                                        <AlertDialog>
-                                                        <AlertDialogTrigger asChild>
-                                                            <Button variant="destructive" className="w-full justify-start">
-                                                                <Trash2 className="mr-2 h-4 w-4" /> Hapus Produk
-                                                            </Button>
-                                                        </AlertDialogTrigger>
-                                                        <AlertDialogContent>
-                                                            <AlertDialogHeader>
-                                                                <AlertDialogTitle>Anda Yakin?</AlertDialogTitle>
-                                                                <AlertDialogDescription>
-                                                                    Tindakan ini akan menghapus produk <span className="font-bold">{product.name}</span> secara permanen. Aksi ini tidak dapat diurungkan.
-                                                                </AlertDialogDescription>
-                                                            </AlertDialogHeader>
-                                                            <AlertDialogFooter>
-                                                                <AlertDialogCancel>Batal</AlertDialogCancel>
-                                                                <AlertDialogAction onClick={() => handleDeleteProduct(product.id)} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">Ya, Hapus Produk</AlertDialogAction>
-                                                            </AlertDialogFooter>
-                                                        </AlertDialogContent>
-                                                    </AlertDialog>
-                                                </div>
-                                            </DialogContent>
-                                        </Dialog>
+                                    <TableCell className="text-right text-muted-foreground">
+                                        <ChevronRightIcon className="ml-auto h-4 w-4" />
                                     </TableCell>
                                 </TableRow>
                             ))
@@ -1059,12 +560,5 @@ export default function ProductsPage() {
             </div>
         </CardFooter>
     </Card>
-
-     <Sheet open={isSheetOpen} onOpenChange={handleSheetOpenChange}>
-        <SheetContent>
-            {editingProduct && <ProductForm product={editingProduct} onSave={fetchProducts} onOpenChange={handleSheetOpenChange} />}
-        </SheetContent>
-    </Sheet>
-    </>
   )
 }
