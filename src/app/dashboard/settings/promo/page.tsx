@@ -325,7 +325,7 @@ export default function PromoSettingsPage() {
                 </div>
                 <div className="space-y-2">
                      <Label>Periode Promo</Label>
-                    <Popover>
+                    <Popover modal>
                         <PopoverTrigger asChild>
                         <Button
                             id="date"
@@ -349,7 +349,6 @@ export default function PromoSettingsPage() {
                         </PopoverTrigger>
                         <PopoverContent className="w-auto p-0" align="start">
                         <Calendar
-                            initialFocus
                             mode="range"
                             defaultMonth={dateRange?.from}
                             selected={dateRange}
