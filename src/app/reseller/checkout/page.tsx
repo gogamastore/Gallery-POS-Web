@@ -7,7 +7,6 @@ import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Card,
   CardContent,
@@ -75,6 +74,12 @@ const formatCurrency = (amount: number) =>
     currency: "IDR",
     minimumFractionDigits: 0,
   }).format(amount);
+
+// Berat default per produk (gram) bila belum diatur di dokumen produk.
+const DEFAULT_WEIGHT_GRAM = 200;
+const itemWeightGram = (w?: number) => (w && w > 0 ? w : DEFAULT_WEIGHT_GRAM);
+const formatWeight = (gram: number) =>
+  gram >= 1000 ? `${(gram / 1000).toLocaleString("id-ID", { maximumFractionDigits: 2 })} kg` : `${gram} gr`;
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -170,6 +175,7 @@ export default function CheckoutPage() {
   });
   const [userAddresses, setUserAddresses] = useState<UserAddress[]>([]);
   const [isAddressLoading, setIsAddressLoading] = useState(true);
+  const [selectedAddressId, setSelectedAddressId] = useState<string>("");
 
   // ── Delivery type ─────────────────────────────────────────────────
   const [deliveryType, setDeliveryType] = useState<"courier" | "pickup">("courier");
@@ -205,6 +211,13 @@ export default function CheckoutPage() {
 
   const grandTotal = useMemo(() => totalAmount + shippingFee, [totalAmount, shippingFee]);
 
+  // Berat paket: berat asli produk × qty (fallback 200gr bila belum diatur).
+  // Nilai ini dikirim ke Biteship untuk menghitung tarif sesuai berat.
+  const totalWeight = useMemo(
+    () => cart.reduce((sum, item) => sum + itemWeightGram(item.weightGram) * item.quantity, 0),
+    [cart]
+  );
+
   // ── Effects ───────────────────────────────────────────────────────
 
   // Load user data on mount
@@ -221,6 +234,7 @@ export default function CheckoutPage() {
 
         const defaultAddr = addresses.find((a) => a.isDefault) || addresses[0];
         if (defaultAddr) {
+          setSelectedAddressId(defaultAddr.id);
           applyAddress(defaultAddr);
           autoLoadRates(defaultAddr);
         } else {
@@ -360,7 +374,7 @@ export default function CheckoutPage() {
         name: item.name,
         price: item.finalPrice,
         quantity: item.quantity,
-        weightGram: 200,
+        weightGram: itemWeightGram(item.weightGram),
       }));
       const payload: Parameters<typeof getBiteshipRatesFn>[0] = {
         destinationAreaId: areaId,
@@ -420,6 +434,7 @@ export default function CheckoutPage() {
   function handleAddressSelect(addressId: string) {
     const addr = userAddresses.find((a) => a.id === addressId);
     if (!addr) return;
+    setSelectedAddressId(addressId);
     applyAddress(addr);
     setSelectedArea(null);
     setAreaQuery("");
@@ -468,6 +483,7 @@ export default function CheckoutPage() {
           price: item.finalPrice,
           quantity: item.quantity,
           imageUrl: item.image,
+          weightGram: itemWeightGram(item.weightGram),
         })),
         productIds: cart.map((item) => item.id),
         subtotal: totalAmount,
@@ -602,43 +618,72 @@ export default function CheckoutPage() {
               {isAddressLoading ? (
                 <p className="text-sm text-muted-foreground">Memuat alamat...</p>
               ) : userAddresses.length > 0 ? (
-                <div className="space-y-2">
-                  <Label>Pilih Alamat Tersimpan</Label>
-                  <Select onValueChange={handleAddressSelect}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Pilih dari alamat yang sudah disimpan" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {userAddresses.map((addr) => (
-                        <SelectItem key={addr.id} value={addr.id}>
-                          <div className="flex flex-col">
-                            <span className="font-semibold">{addr.label || addr.name}</span>
-                            <span className="text-xs text-muted-foreground">{addr.address}, {addr.city}</span>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground text-center">atau isi manual di bawah</p>
-                </div>
-              ) : null}
+                <>
+                  <div className="space-y-2">
+                    <Label>Pilih Alamat Tersimpan</Label>
+                    <Select value={selectedAddressId} onValueChange={handleAddressSelect}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Pilih dari alamat yang sudah disimpan" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {userAddresses.map((addr) => (
+                          <SelectItem key={addr.id} value={addr.id}>
+                            <div className="flex flex-col">
+                              <span className="font-semibold">{addr.label || addr.name}</span>
+                              <span className="text-xs text-muted-foreground">{addr.address}, {addr.city}</span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="name">Nama Penerima</Label>
-                <Input id="name" value={customerDetails.name} onChange={(e) => setCustomerDetails((p) => ({ ...p, name: e.target.value }))} placeholder="Nama lengkap penerima" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="whatsapp">Nomor WhatsApp</Label>
-                <Input id="whatsapp" value={customerDetails.whatsapp} onChange={(e) => setCustomerDetails((p) => ({ ...p, whatsapp: e.target.value }))} placeholder="Contoh: 081234567890" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="address">Alamat Lengkap</Label>
-                <Textarea id="address" value={customerDetails.address} onChange={(e) => setCustomerDetails((p) => ({ ...p, address: e.target.value }))} placeholder="Jalan, No. Rumah, RT/RW, Kelurahan, Kecamatan, Kota, Kode Pos" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="notes">Catatan (opsional)</Label>
-                <Input id="notes" value={customerDetails.notes} onChange={(e) => setCustomerDetails((p) => ({ ...p, notes: e.target.value }))} placeholder="Petunjuk khusus untuk kurir" />
-              </div>
+                  {/* Display alamat terpilih (read-only) */}
+                  {customerDetails.name || customerDetails.address ? (
+                    <div className="rounded-lg border bg-muted/40 p-4 space-y-2.5 text-sm">
+                      <div className="flex gap-3">
+                        <span className="text-muted-foreground w-28 shrink-0">Nama Penerima</span>
+                        <span className="font-medium">{customerDetails.name || "-"}</span>
+                      </div>
+                      <div className="flex gap-3">
+                        <span className="text-muted-foreground w-28 shrink-0">Nomor Telepon</span>
+                        <span className="font-medium">{customerDetails.whatsapp || "-"}</span>
+                      </div>
+                      <div className="flex gap-3">
+                        <span className="text-muted-foreground w-28 shrink-0">Alamat Tujuan</span>
+                        <span className="font-medium leading-relaxed">{customerDetails.address || "-"}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      Pilih alamat tersimpan untuk menampilkan detail pengiriman.
+                    </p>
+                  )}
+
+                  <div className="flex justify-end">
+                    <Button asChild variant="link" size="sm" className="h-auto p-0 text-xs">
+                      <Link href="/reseller/profile/address">Kelola alamat tersimpan</Link>
+                    </Button>
+                  </div>
+
+                  {/* Catatan kurir (opsional) */}
+                  <div className="space-y-2">
+                    <Label htmlFor="notes">Catatan untuk kurir (opsional)</Label>
+                    <Input id="notes" value={customerDetails.notes} onChange={(e) => setCustomerDetails((p) => ({ ...p, notes: e.target.value }))} placeholder="Petunjuk khusus untuk kurir" />
+                  </div>
+                </>
+              ) : (
+                <div className="rounded-lg border border-dashed p-6 text-center space-y-3">
+                  <MapPin className="h-8 w-8 mx-auto text-muted-foreground" />
+                  <div>
+                    <p className="font-medium">Belum ada alamat tersimpan</p>
+                    <p className="text-sm text-muted-foreground">Tambahkan alamat pengiriman terlebih dahulu untuk melanjutkan.</p>
+                  </div>
+                  <Button asChild>
+                    <Link href="/reseller/profile/address">Tambah Alamat</Link>
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -774,9 +819,15 @@ export default function CheckoutPage() {
                   {/* Daftar tarif kurir */}
                   {!isLoadingRates && biteshipRates.length > 0 && (
                     <div className="space-y-4">
-                      <div className="flex items-center gap-2">
-                        <Truck className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-sm font-medium">{biteshipRates.length} layanan tersedia</span>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <Truck className="h-4 w-4 text-muted-foreground" />
+                          <span className="text-sm font-medium">{biteshipRates.length} layanan tersedia</span>
+                        </div>
+                        <Badge variant="secondary" className="gap-1 font-normal">
+                          <Package className="h-3 w-3" />
+                          {formatWeight(totalWeight)}
+                        </Badge>
                       </div>
                       {groupedRates.map(({ category, label, rates }) => (
                         <div key={category}>
@@ -887,6 +938,52 @@ export default function CheckoutPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* Ringkasan Pesanan (mobile) — sama seperti aplikasi Flutter */}
+          <Card className="lg:hidden">
+            <CardHeader><CardTitle>Ringkasan Pesanan</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-3">
+                {cart.map((item) => (
+                  <div key={item.id} className="flex items-start gap-3">
+                    <Image src={item.image} alt={item.name} width={56} height={56} className="rounded-md object-cover border shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium leading-tight line-clamp-2">{item.name}</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {item.quantity} × {formatCurrency(item.finalPrice)}
+                        <span className="mx-1">·</span>
+                        {formatWeight(itemWeightGram(item.weightGram) * item.quantity)}
+                      </p>
+                      <p className="text-sm font-bold mt-1">{formatCurrency(item.finalPrice * item.quantity)}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="pt-3 border-t space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span>Subtotal ({totalItems} item)</span>
+                  <span>{formatCurrency(totalAmount)}</span>
+                </div>
+                <div className="flex justify-between text-sm text-muted-foreground">
+                  <span className="flex items-center gap-1.5">
+                    <Package className="h-3.5 w-3.5" />
+                    Total Berat
+                  </span>
+                  <span>{formatWeight(totalWeight)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span>Ongkos Kirim</span>
+                  <span className={cn(!hasShipping && deliveryType === "courier" && "text-orange-500")}>
+                    {deliveryType === "pickup" ? "Gratis" : selectedRate ? formatCurrency(shippingFee) : "Belum dipilih"}
+                  </span>
+                </div>
+                <div className="flex justify-between font-bold text-lg pt-2 border-t">
+                  <span>Total</span>
+                  <span>{formatCurrency(grandTotal)}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* ── Right Column: Ringkasan ── */}
@@ -901,7 +998,11 @@ export default function CheckoutPage() {
                       <Image src={item.image} alt={item.name} width={48} height={48} className="rounded-md object-cover shrink-0" />
                       <div>
                         <p className="font-medium text-sm leading-tight">{item.name}</p>
-                        <p className="text-xs text-muted-foreground">{item.quantity} × {formatCurrency(item.finalPrice)}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {item.quantity} × {formatCurrency(item.finalPrice)}
+                          <span className="mx-1">·</span>
+                          {formatWeight(itemWeightGram(item.weightGram) * item.quantity)}
+                        </p>
                       </div>
                     </div>
                     <p className="text-sm font-medium shrink-0">{formatCurrency(item.finalPrice * item.quantity)}</p>
@@ -912,6 +1013,13 @@ export default function CheckoutPage() {
                 <div className="flex justify-between text-sm">
                   <span>Subtotal ({totalItems} item)</span>
                   <span>{formatCurrency(totalAmount)}</span>
+                </div>
+                <div className="flex justify-between text-sm text-muted-foreground">
+                  <span className="flex items-center gap-1.5">
+                    <Package className="h-3.5 w-3.5" />
+                    Total Berat
+                  </span>
+                  <span>{formatWeight(totalWeight)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>Ongkos Kirim</span>

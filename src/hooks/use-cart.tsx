@@ -17,6 +17,7 @@ interface Product {
   discountPrice?: string;
   stock: number;
   sku: string;
+  weightGram?: number;
 }
 
 interface CartItem extends Product {
