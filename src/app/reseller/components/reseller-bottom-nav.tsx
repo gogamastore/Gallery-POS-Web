@@ -3,14 +3,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, TrendingUp, ShoppingCart, User } from "lucide-react";
+import { Home, LayoutGrid, ShoppingCart, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCart } from "@/hooks/use-cart";
 import { Badge } from "@/components/ui/badge";
 
 const navItems = [
     { href: "/reseller", label: "Beranda", icon: Home },
-    { href: "/reseller/trending", label: "Trending", icon: TrendingUp },
+    { href: "/reseller/trending", label: "Katalog Produk", icon: LayoutGrid },
     { href: "/reseller/cart", label: "Keranjang", icon: ShoppingCart },
     { href: "/reseller/profile", label: "Profil", icon: User },
 ];
@@ -37,7 +37,7 @@ export default function BottomNav() {
                                 <Badge className="absolute top-1 right-3 h-5 w-5 justify-center p-0">{totalItems}</Badge>
                             )}
                             <item.icon className={cn("w-5 h-5 mb-1", isActive ? "text-primary" : "text-gray-500 group-hover:text-primary")} />
-                            <span className="text-xs">
+                            <span className="text-xs text-center leading-tight">
                                 {item.label}
                             </span>
                         </Link>

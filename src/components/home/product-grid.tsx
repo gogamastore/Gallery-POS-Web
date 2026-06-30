@@ -1,15 +1,18 @@
 
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { collection, getDocs, query, where, Timestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import ProductCard from "../product-card";
+import ProductListItem from "../product-list-item";
 import { useToast } from "@/hooks/use-toast";
-import { Card, CardFooter } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { Card } from "@/components/ui/card";
+import { Loader2 } from "lucide-react";
+
+// Render bertahap: jumlah awal & penambahan per "scroll".
+const INITIAL_VISIBLE = 24;
+const LOAD_BATCH = 24;
 
 interface Product {
   id: string;
@@ -41,13 +44,10 @@ const formatCurrency = (value: string | number): string => {
     }).format(num);
 }
 
-export default function ProductGrid({ searchTerm, category }: { searchTerm: string, category: string }) {
+export default function ProductGrid({ searchTerm, category, viewMode = "grid" }: { searchTerm: string, category: string, viewMode?: "grid" | "list" }) {
     const [allProducts, setAllProducts] = useState<Product[]>([]);
     const [loading, setLoading] = useState(true);
     const { toast } = useToast();
-    
-    const [currentPage, setCurrentPage] = useState(1);
-    const [itemsPerPage, setItemsPerPage] = useState(24);
 
     useEffect(() => {
         async function fetchProducts() {
@@ -123,17 +123,41 @@ export default function ProductGrid({ searchTerm, category }: { searchTerm: stri
         return filtered;
     }, [allProducts, category, searchTerm]);
 
-    const paginatedProducts = useMemo(() => {
-        const startIndex = (currentPage - 1) * itemsPerPage;
-        const endIndex = startIndex + itemsPerPage;
-        return filteredProducts.slice(startIndex, endIndex);
-    }, [currentPage, itemsPerPage, filteredProducts]);
+    // ── Render bertahap saat scroll (virtualisasi sederhana) ──────────
+    // Data penuh tetap di memori (filteredProducts), jadi PENCARIAN tetap
+    // bekerja menyeluruh — hanya jumlah yang DIRENDER ke DOM yang dibatasi
+    // dan bertambah saat sentinel mendekati viewport.
+    const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE);
+    const sentinelRef = useRef<HTMLDivElement | null>(null);
 
-    const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
-    
-     useEffect(() => {
-        setCurrentPage(1);
-    }, [searchTerm, category]);
+    // Reset ke awal setiap kali hasil filter berubah (pencarian/kategori baru).
+    useEffect(() => {
+        setVisibleCount(INITIAL_VISIBLE);
+    }, [searchTerm, category, viewMode]);
+
+    const visibleProducts = useMemo(
+        () => filteredProducts.slice(0, visibleCount),
+        [filteredProducts, visibleCount]
+    );
+    const hasMore = visibleCount < filteredProducts.length;
+
+    useEffect(() => {
+        if (!hasMore) return;
+        const el = sentinelRef.current;
+        if (!el) return;
+        const observer = new IntersectionObserver(
+            (entries) => {
+                if (entries[0]?.isIntersecting) {
+                    setVisibleCount((c) =>
+                        Math.min(c + LOAD_BATCH, filteredProducts.length)
+                    );
+                }
+            },
+            { rootMargin: "600px" }
+        );
+        observer.observe(el);
+        return () => observer.disconnect();
+    }, [hasMore, filteredProducts.length, visibleCount]);
 
     return (
         <section className="w-full py-6 md:py-10">
@@ -152,64 +176,26 @@ export default function ProductGrid({ searchTerm, category }: { searchTerm: stri
                             </Card>
                         ))}
                     </div>
-                ) : paginatedProducts.length > 0 ? (
+                ) : filteredProducts.length > 0 ? (
                     <>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 sm:gap-4">
-                            {paginatedProducts.map((product) => (
-                                <ProductCard key={product.id} product={product} />
-                            ))}
-                        </div>
-                        <CardFooter className="mt-8">
-                             <div className="flex items-center justify-between w-full text-xs text-muted-foreground">
-                                <div className="flex-1">
-                                    Menampilkan {paginatedProducts.length} dari {filteredProducts.length} produk.
-                                </div>
-                                <div className="flex items-center gap-4">
-                                    <div className="flex items-center gap-2">
-                                        <p>Baris per halaman</p>
-                                        <Select
-                                            value={`${itemsPerPage}`}
-                                            onValueChange={(value) => {
-                                                setItemsPerPage(Number(value));
-                                                setCurrentPage(1);
-                                            }}
-                                        >
-                                            <SelectTrigger className="h-8 w-[70px]">
-                                                <SelectValue placeholder={itemsPerPage} />
-                                            </SelectTrigger>
-                                            <SelectContent side="top">
-                                                {[24, 48, 96].map((pageSize) => (
-                                                    <SelectItem key={pageSize} value={`${pageSize}`}>
-                                                        {pageSize}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-                                    <div>Halaman {currentPage} dari {totalPages}</div>
-                                    <div className="flex items-center gap-2">
-                                        <Button
-                                            variant="outline"
-                                            size="icon"
-                                            className="h-8 w-8"
-                                            onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-                                            disabled={currentPage === 1}
-                                        >
-                                            <ChevronLeft className="h-4 w-4" />
-                                        </Button>
-                                        <Button
-                                            variant="outline"
-                                            size="icon"
-                                            className="h-8 w-8"
-                                            onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
-                                            disabled={currentPage === totalPages}
-                                        >
-                                            <ChevronRight className="h-4 w-4" />
-                                        </Button>
-                                    </div>
-                                </div>
+                        {viewMode === "list" ? (
+                            <div className="flex flex-col divide-y rounded-lg border bg-card overflow-hidden">
+                                {visibleProducts.map((product) => (
+                                    <ProductListItem key={product.id} product={product} />
+                                ))}
                             </div>
-                        </CardFooter>
+                        ) : (
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 sm:gap-4">
+                                {visibleProducts.map((product) => (
+                                    <ProductCard key={product.id} product={product} />
+                                ))}
+                            </div>
+                        )}
+                        {hasMore && (
+                            <div ref={sentinelRef} className="flex justify-center py-8">
+                                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                            </div>
+                        )}
                     </>
                 ) : (
                     <div className="text-center py-10 text-muted-foreground">

@@ -38,7 +38,7 @@ interface Product {
   stock: number;
   description?: string;
   category?: string;
-  sku?: string;
+  sku: string;
   weightGram?: number;
   isPromo?: boolean;
   discountPrice?: string;
