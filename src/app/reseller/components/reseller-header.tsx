@@ -1,9 +1,8 @@
 
 "use client"
 
-import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Search, ShoppingCart, User, Archive, Loader2 } from "lucide-react"
+import { PanelLeft, ShoppingCart, User, Archive } from "lucide-react"
 import Link from "next/link"
 import { useCart } from "@/hooks/use-cart"
 import { Badge } from "@/components/ui/badge"
@@ -30,7 +29,7 @@ function Logo() {
   );
 }
 
-export default function ResellerHeader() {
+export default function ResellerHeader({ onToggleSidebar }: { onToggleSidebar?: () => void }) {
     const { totalItems, loading: cartLoading } = useCart();
     const { user, signOut } = useAuth();
     const router = useRouter();
@@ -96,9 +95,22 @@ export default function ResellerHeader() {
         <header className="bg-card sticky top-0 z-40 border-b">
         <div className="container mx-auto px-4">
           <div className="flex h-16 items-center justify-between">
-            <Logo />
+            <div className="flex items-center gap-1">
+              {onToggleSidebar && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="hidden md:inline-flex"
+                  onClick={onToggleSidebar}
+                  aria-label="Tampilkan atau sembunyikan menu"
+                >
+                  <PanelLeft className="h-5 w-5" />
+                </Button>
+              )}
+              <Logo />
+            </div>
             <div className="hidden md:flex flex-1 max-w-lg items-center relative">
-              
+
             </div>
             <div className="flex items-center gap-2">
               <Button variant="ghost" size="icon" asChild>

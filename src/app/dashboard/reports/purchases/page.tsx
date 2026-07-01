@@ -21,11 +21,19 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
+import type { DateRange } from "react-day-picker";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -89,6 +97,8 @@ interface PurchaseTransaction {
   totalAmount: number;
   items: PurchaseItem[];
   supplierName?: string;
+  ownerId?: string;
+  ownerName?: string;
   paymentMethod?: 'cash' | 'bank_transfer' | 'credit';
   paymentStatus?: 'paid' | 'unpaid';
 }
@@ -527,10 +537,11 @@ function PurchaseDetailDialog({ transaction, onPurchaseUpdated }: { transaction:
         pdfDoc.text(`ID Transaksi: ${transaction.id}`, 14, 32);
         pdfDoc.text(`Tanggal: ${format(new Date(transaction.date), 'dd MMM yyyy', { locale: dateFnsLocaleId })}`, 14, 37);
         pdfDoc.text(`Supplier: ${transaction.supplierName || 'N/A'}`, 14, 42);
-        pdfDoc.text(`Metode Bayar: ${paymentMethodText}`, 14, 47);
+        pdfDoc.text(`Owner (Pemesan): ${transaction.ownerName || 'N/A'}`, 14, 47);
+        pdfDoc.text(`Metode Bayar: ${paymentMethodText}`, 14, 52);
 
 
-        const tableY = 57;
+        const tableY = 62;
         const tableColumn = ["Nama Produk", "Jumlah", "Harga Beli", "Subtotal"];
         const tableRows = transaction.items?.map(item => [
             item.productName,
@@ -562,10 +573,12 @@ function PurchaseDetailDialog({ transaction, onPurchaseUpdated }: { transaction:
                 <DialogHeader>
                     <DialogTitle>Faktur Pembelian #{transaction.id}</DialogTitle>
                     <DialogDescription>Rincian transaksi pembelian.</DialogDescription>
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground pt-1">
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground pt-1">
                         <span>Tanggal: {format(new Date(transaction.date), 'dd MMMM yyyy', { locale: dateFnsLocaleId })}</span>
                         <Separator orientation="vertical" className="h-4"/>
                         <span>Supplier: {transaction.supplierName || 'N/A'}</span>
+                        <Separator orientation="vertical" className="h-4"/>
+                        <span>Owner: {transaction.ownerName || 'N/A'}</span>
                     </div>
                 </DialogHeader>
                 <div className="grid gap-4 py-4 flex-1 overflow-y-auto">
@@ -628,11 +641,12 @@ export default function PurchasesReportPage() {
   const [filteredTransactions, setFilteredTransactions] = useState<PurchaseTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
-  const [dateRange, setDateRange] = useState<{ from?: Date; to?: Date }>({
+  const [dateRange, setDateRange] = useState<DateRange | undefined>({
     from: startOfDay(new Date()),
     to: endOfDay(new Date()),
   });
-  
+  const [selectedOwnerId, setSelectedOwnerId] = useState<string>("all");
+
   const filterTransactionsByDate = useCallback((transactions: PurchaseTransaction[], from?: Date, to?: Date) => {
     if (!from && !to) {
         return transactions;
@@ -671,7 +685,7 @@ export default function PurchasesReportPage() {
         });
         setAllTransactions(transactionsData);
         // Apply initial date filter
-        const initialFiltered = filterTransactionsByDate(transactionsData, dateRange.from, dateRange.to);
+        const initialFiltered = filterTransactionsByDate(transactionsData, dateRange?.from, dateRange?.to);
         setFilteredTransactions(initialFiltered);
       } catch (error) {
         console.error("Error fetching purchase transactions: ", error);
@@ -686,7 +700,7 @@ export default function PurchasesReportPage() {
   }, [fetchTransactions]);
   
   const handleFilter = () => {
-    const { from, to } = dateRange;
+    const { from, to } = dateRange || {};
     const filtered = filterTransactionsByDate(allTransactions, from, to);
     setFilteredTransactions(filtered);
   };
@@ -695,20 +709,38 @@ export default function PurchasesReportPage() {
     const todayStart = startOfDay(new Date());
     const todayEnd = endOfDay(new Date());
     setDateRange({ from: todayStart, to: todayEnd });
+    setSelectedOwnerId("all");
     const todayTransactions = filterTransactionsByDate(allTransactions, todayStart, todayEnd);
     setFilteredTransactions(todayTransactions);
   };
 
+  // Opsi owner untuk filter (unik dari transaksi yang ada).
+  const ownerOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    allTransactions.forEach((t) => {
+      if (t.ownerId && t.ownerName) map.set(t.ownerId, t.ownerName);
+    });
+    return Array.from(map, ([id, name]) => ({ id, name })).sort((a, b) =>
+      a.name.localeCompare(b.name)
+    );
+  }, [allTransactions]);
+
+  // Terapkan filter owner di atas filter tanggal.
+  const displayedTransactions = useMemo(() => {
+    if (selectedOwnerId === "all") return filteredTransactions;
+    return filteredTransactions.filter((t) => t.ownerId === selectedOwnerId);
+  }, [filteredTransactions, selectedOwnerId]);
+
   const { totalPurchaseAmount, totalTransactions, chartData } = useMemo(() => {
-    const amount = filteredTransactions.reduce((acc, trans) => acc + trans.totalAmount, 0);
-    const transCount = filteredTransactions.length;
-    const chartDataProcessed = processPurchaseDataForChart(filteredTransactions);
+    const amount = displayedTransactions.reduce((acc, trans) => acc + trans.totalAmount, 0);
+    const transCount = displayedTransactions.length;
+    const chartDataProcessed = processPurchaseDataForChart(displayedTransactions);
     return {
         totalPurchaseAmount: amount,
         totalTransactions: transCount,
         chartData: chartDataProcessed,
     };
-  }, [filteredTransactions]);
+  }, [displayedTransactions]);
 
   if (loading && allTransactions.length === 0) {
     return (
@@ -773,6 +805,19 @@ export default function PurchasesReportPage() {
             </Popover>
             <Button onClick={handleFilter}>Filter</Button>
             <Button variant="outline" onClick={handleReset}>Reset</Button>
+            <Select value={selectedOwnerId} onValueChange={setSelectedOwnerId}>
+                <SelectTrigger className="w-[220px]">
+                    <SelectValue placeholder="Semua Owner" />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="all">Semua Owner</SelectItem>
+                    {ownerOptions.map((owner) => (
+                        <SelectItem key={owner.id} value={owner.id}>
+                            {owner.name}
+                        </SelectItem>
+                    ))}
+                </SelectContent>
+            </Select>
         </CardContent>
       </Card>
 
@@ -836,7 +881,7 @@ export default function PurchasesReportPage() {
             <Table>
                 <TableHeader>
                 <TableRow>
-                    <TableHead>ID Transaksi</TableHead>
+                    <TableHead>Owner</TableHead>
                     <TableHead>Tanggal</TableHead>
                     <TableHead>Supplier</TableHead>
                     <TableHead>Status Pembayaran</TableHead>
@@ -845,12 +890,12 @@ export default function PurchasesReportPage() {
                 </TableRow>
                 </TableHeader>
                 <TableBody>
-                {loading && filteredTransactions.length === 0 ? (
+                {loading && displayedTransactions.length === 0 ? (
                      <TableRow><TableCell colSpan={6} className="text-center h-24">Memuat transaksi...</TableCell></TableRow>
-                ) : filteredTransactions.length > 0 ? (
-                    filteredTransactions.map((transaction) => (
+                ) : displayedTransactions.length > 0 ? (
+                    displayedTransactions.map((transaction) => (
                     <TableRow key={transaction.id}>
-                        <TableCell className="font-medium">{transaction.id.substring(0,7)}...</TableCell>
+                        <TableCell className="font-medium">{transaction.ownerName || '-'}</TableCell>
                         <TableCell>{format(new Date(transaction.date), 'dd MMM yyyy', { locale: dateFnsLocaleId })}</TableCell>
                         <TableCell>{transaction.supplierName || 'N/A'}</TableCell>
                         <TableCell>

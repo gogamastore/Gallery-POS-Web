@@ -21,8 +21,9 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { DollarSign, Search, Warehouse, ArrowLeft } from "lucide-react";
+import { DollarSign, Search, ArrowLeft, Download } from "lucide-react";
 import { useRouter } from "next/navigation";
+import * as XLSX from "xlsx";
 
 
 interface ProductValuation {
@@ -70,8 +71,10 @@ export default function InventoryValuationPage() {
             };
         });
 
-        setAllProducts(productValuations);
-        setFilteredProducts(productValuations);
+        // Urutkan dari Total Nilai Modal terbesar ke terkecil.
+        const sorted = [...productValuations].sort((a, b) => b.totalValue - a.totalValue);
+        setAllProducts(sorted);
+        setFilteredProducts(sorted);
 
       } catch (error) {
         console.error("Error fetching inventory valuation data: ", error);
@@ -84,16 +87,46 @@ export default function InventoryValuationPage() {
   }, []);
 
   useEffect(() => {
-    const results = allProducts.filter(product =>
-      product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      product.sku.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const results = allProducts
+      .filter(product =>
+        product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        product.sku.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+      .sort((a, b) => b.totalValue - a.totalValue);
     setFilteredProducts(results);
   }, [searchTerm, allProducts]);
 
   const totalInventoryValue = useMemo(() => {
     return allProducts.reduce((sum, product) => sum + product.totalValue, 0);
   }, [allProducts]);
+
+  const handleDownloadExcel = () => {
+    if (filteredProducts.length === 0) return;
+
+    const rows: Record<string, string | number>[] = filteredProducts.map((p) => ({
+      "Nama Produk": p.name,
+      "SKU": p.sku,
+      "Stok Saat Ini": p.stock,
+      "Harga Modal (Beli)": p.purchasePrice,
+      "Total Nilai Modal": p.totalValue,
+    }));
+
+    // Baris total di bawah daftar.
+    const totalValue = filteredProducts.reduce((sum, p) => sum + p.totalValue, 0);
+    rows.push({
+      "Nama Produk": "TOTAL",
+      "SKU": "",
+      "Stok Saat Ini": "",
+      "Harga Modal (Beli)": "",
+      "Total Nilai Modal": totalValue,
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Modal Produk");
+    const dateStr = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(workbook, `laporan-modal-produk-${dateStr}.xlsx`);
+  };
 
   if (loading) {
       return <div className="text-center p-8">Memuat data valuasi inventaris...</div>
@@ -127,7 +160,18 @@ export default function InventoryValuationPage() {
       
       <Card>
         <CardHeader>
-          <CardTitle>Rincian Modal per Produk</CardTitle>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <CardTitle>Rincian Modal per Produk</CardTitle>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDownloadExcel}
+              disabled={filteredProducts.length === 0}
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Download Excel
+            </Button>
+          </div>
            <div className="relative pt-2">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input

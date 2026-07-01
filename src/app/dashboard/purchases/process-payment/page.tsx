@@ -16,10 +16,10 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { ArrowLeft, Banknote, CreditCard, DollarSign, Loader2, PlusCircle, Building, Users } from "lucide-react";
+import { ArrowLeft, Banknote, CreditCard, DollarSign, Loader2, PlusCircle, Building, Users, Search } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 
-interface Supplier {
+interface Entity {
     id: string;
     name: string;
     address?: string;
@@ -30,24 +30,52 @@ const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(amount);
 };
 
-
-function SupplierDialog({ onSelectSupplier }: { onSelectSupplier: (supplier: Supplier) => void }) {
+// Dialog generik untuk memilih / menambah entitas (supplier atau owner)
+// dari sebuah collection Firestore. Dilengkapi kotak pencarian.
+function EntityPickerDialog({
+    collectionName,
+    triggerLabel,
+    triggerIcon,
+    dialogTitle,
+    dialogDescription,
+    addLabel,
+    nameLabel,
+    namePlaceholder,
+    emptyText,
+    searchPlaceholder,
+    showContactFields = true,
+    onSelect,
+}: {
+    collectionName: string;
+    triggerLabel: string;
+    triggerIcon: React.ReactNode;
+    dialogTitle: string;
+    dialogDescription: string;
+    addLabel: string;
+    nameLabel: string;
+    namePlaceholder: string;
+    emptyText: string;
+    searchPlaceholder: string;
+    showContactFields?: boolean;
+    onSelect: (entity: Entity) => void;
+}) {
     const [isOpen, setIsOpen] = useState(false);
     const [isAdding, setIsAdding] = useState(false);
-    const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+    const [items, setItems] = useState<Entity[]>([]);
     const [loading, setLoading] = useState(false);
-    const [newSupplier, setNewSupplier] = useState({ name: "", address: "", whatsapp: "" });
+    const [search, setSearch] = useState("");
+    const [newEntity, setNewEntity] = useState({ name: "", address: "", whatsapp: "" });
     const { toast } = useToast();
 
-    const fetchSuppliers = async () => {
+    const fetchItems = async () => {
         setLoading(true);
         try {
-            const q = query(collection(db, 'suppliers'), orderBy('name', 'asc'));
+            const q = query(collection(db, collectionName), orderBy('name', 'asc'));
             const snapshot = await getDocs(q);
-            setSuppliers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Supplier)));
+            setItems(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Entity)));
         } catch (error) {
-            console.error("Error fetching suppliers:", error);
-            toast({ variant: 'destructive', title: 'Gagal memuat supplier' });
+            console.error(`Error fetching ${collectionName}:`, error);
+            toast({ variant: 'destructive', title: 'Gagal memuat data' });
         } finally {
             setLoading(false);
         }
@@ -55,77 +83,102 @@ function SupplierDialog({ onSelectSupplier }: { onSelectSupplier: (supplier: Sup
 
     useEffect(() => {
         if (isOpen && !isAdding) {
-            fetchSuppliers();
+            fetchItems();
         }
     }, [isOpen, isAdding]);
 
-    const handleAddSupplier = async () => {
-        if (!newSupplier.name) {
-            toast({ variant: 'destructive', title: 'Nama supplier harus diisi' });
+    const filteredItems = useMemo(
+        () => items.filter(i => i.name.toLowerCase().includes(search.toLowerCase())),
+        [items, search]
+    );
+
+    const handleAdd = async () => {
+        if (!newEntity.name.trim()) {
+            toast({ variant: 'destructive', title: `${nameLabel} harus diisi` });
             return;
         }
         try {
-            const docRef = await addDoc(collection(db, 'suppliers'), { ...newSupplier, createdAt: serverTimestamp() });
-            const addedSupplier = { id: docRef.id, ...newSupplier };
-            onSelectSupplier(addedSupplier); // Auto-select the new supplier
-            toast({ title: "Supplier berhasil ditambahkan" });
+            const payload: Record<string, string> = showContactFields
+                ? { name: newEntity.name, whatsapp: newEntity.whatsapp, address: newEntity.address }
+                : { name: newEntity.name };
+            const docRef = await addDoc(collection(db, collectionName), { ...payload, createdAt: serverTimestamp() });
+            const added = { id: docRef.id, ...payload } as Entity;
+            onSelect(added); // Auto-select entitas baru
+            toast({ title: "Berhasil ditambahkan" });
             setIsAdding(false);
-            setNewSupplier({ name: "", address: "", whatsapp: "" });
+            setNewEntity({ name: "", address: "", whatsapp: "" });
+            setSearch("");
             setIsOpen(false);
         } catch (error) {
-            toast({ variant: 'destructive', title: 'Gagal menambah supplier' });
+            toast({ variant: 'destructive', title: 'Gagal menambah data' });
         }
     };
-    
+
     return (
-        <Dialog open={isOpen} onOpenChange={setIsOpen}>
+        <Dialog open={isOpen} onOpenChange={(open) => { setIsOpen(open); if (!open) { setIsAdding(false); setSearch(""); } }}>
             <DialogTrigger asChild>
-                <Button variant="outline"><Building className="mr-2 h-4 w-4"/>Pilih Supplier</Button>
+                <Button variant="outline">{triggerIcon}{triggerLabel}</Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-2xl">
                 <DialogHeader>
-                    <DialogTitle>Pilih atau Tambah Supplier</DialogTitle>
-                    <DialogDescription>
-                        Pilih supplier dari daftar yang ada, atau tambahkan supplier baru ke dalam sistem.
-                    </DialogDescription>
+                    <DialogTitle>{dialogTitle}</DialogTitle>
+                    <DialogDescription>{dialogDescription}</DialogDescription>
                 </DialogHeader>
                  {isAdding ? (
                     <div className="space-y-4 p-2 border rounded-md">
-                        <h3 className="font-semibold">Tambah Supplier Baru</h3>
+                        <h3 className="font-semibold">{addLabel}</h3>
                         <div className="space-y-2">
-                            <Label htmlFor="supplier-name">Nama Supplier</Label>
-                            <Input id="supplier-name" placeholder="Nama Perusahaan / Toko" value={newSupplier.name} onChange={(e) => setNewSupplier(p => ({...p, name: e.target.value}))}/>
+                            <Label htmlFor="entity-name">{nameLabel}</Label>
+                            <Input id="entity-name" placeholder={namePlaceholder} value={newEntity.name} onChange={(e) => setNewEntity(p => ({...p, name: e.target.value}))}/>
                         </div>
-                        <div className="space-y-2">
-                             <Label htmlFor="supplier-whatsapp">Kontak (WhatsApp)</Label>
-                            <Input id="supplier-whatsapp" placeholder="Nomor WhatsApp (opsional)" value={newSupplier.whatsapp} onChange={(e) => setNewSupplier(p => ({...p, whatsapp: e.target.value}))}/>
-                        </div>
-                        <div className="space-y-2">
-                             <Label htmlFor="supplier-address">Alamat</Label>
-                            <Textarea id="supplier-address" placeholder="Alamat supplier (opsional)" value={newSupplier.address} onChange={(e) => setNewSupplier(p => ({...p, address: e.target.value}))}/>
-                        </div>
-
+                        {showContactFields && (
+                            <>
+                                <div className="space-y-2">
+                                    <Label htmlFor="entity-whatsapp">Kontak (WhatsApp)</Label>
+                                    <Input id="entity-whatsapp" placeholder="Nomor WhatsApp (opsional)" value={newEntity.whatsapp} onChange={(e) => setNewEntity(p => ({...p, whatsapp: e.target.value}))}/>
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="entity-address">Alamat</Label>
+                                    <Textarea id="entity-address" placeholder="Alamat (opsional)" value={newEntity.address} onChange={(e) => setNewEntity(p => ({...p, address: e.target.value}))}/>
+                                </div>
+                            </>
+                        )}
                         <div className="flex justify-end gap-2">
                             <Button variant="ghost" onClick={() => setIsAdding(false)}>Batal</Button>
-                            <Button onClick={handleAddSupplier} size="sm">Simpan Supplier</Button>
+                            <Button onClick={handleAdd} size="sm">Simpan</Button>
                         </div>
                     </div>
                 ) : (
                     <>
+                        <div className="relative">
+                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                            <Input
+                                placeholder={searchPlaceholder}
+                                className="pl-8"
+                                value={search}
+                                onChange={(e) => setSearch(e.target.value)}
+                            />
+                        </div>
                         <div className="max-h-80 overflow-y-auto">
-                            {loading ? <p>Memuat...</p> : suppliers.length > 0 ? suppliers.map(s => (
-                                <div key={s.id} onClick={() => { onSelectSupplier(s); setIsOpen(false); }}
+                            {loading ? (
+                                <p className="text-sm text-muted-foreground text-center p-4">Memuat...</p>
+                            ) : filteredItems.length > 0 ? filteredItems.map(s => (
+                                <div key={s.id} onClick={() => { onSelect(s); setIsOpen(false); setSearch(""); }}
                                     className="p-3 hover:bg-muted rounded-md cursor-pointer border-b">
                                     <p className="font-semibold">{s.name}</p>
-                                    <p className="text-sm text-muted-foreground">{s.whatsapp}</p>
-                                    <p className="text-xs text-muted-foreground">{s.address}</p>
+                                    {s.whatsapp && <p className="text-sm text-muted-foreground">{s.whatsapp}</p>}
+                                    {s.address && <p className="text-xs text-muted-foreground">{s.address}</p>}
                                 </div>
-                            )) : <p className="text-sm text-muted-foreground text-center p-4">Belum ada supplier. Silakan tambah baru.</p>}
+                            )) : (
+                                <p className="text-sm text-muted-foreground text-center p-4">
+                                    {search ? "Tidak ada hasil yang cocok." : emptyText}
+                                </p>
+                            )}
                         </div>
                         <Separator/>
                         <DialogFooter>
                             <Button variant="secondary" onClick={() => setIsAdding(true)} className="w-full justify-start">
-                                <PlusCircle className="mr-2 h-4 w-4"/> Tambah Supplier Baru
+                                <PlusCircle className="mr-2 h-4 w-4"/> {addLabel}
                             </Button>
                         </DialogFooter>
                     </>
@@ -141,7 +194,8 @@ export default function ProcessPaymentPage() {
     const { toast } = useToast();
     
     const [isProcessing, setIsProcessing] = useState(false);
-    const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
+    const [selectedSupplier, setSelectedSupplier] = useState<Entity | null>(null);
+    const [selectedOwner, setSelectedOwner] = useState<Entity | null>(null);
     const [paymentMethod, setPaymentMethod] = useState("cash");
     const purchaseDate = new Date();
 
@@ -155,6 +209,10 @@ export default function ProcessPaymentPage() {
     const handleProcessTransaction = async () => {
         if (cart.length === 0) {
             toast({ variant: "destructive", title: "Keranjang Kosong" });
+            return;
+        }
+        if (!selectedSupplier) {
+            toast({ variant: "destructive", title: "Supplier wajib dipilih", description: "Silakan pilih supplier terlebih dahulu." });
             return;
         }
         setIsProcessing(true);
@@ -172,8 +230,10 @@ export default function ProcessPaymentPage() {
                     purchasePrice: item.purchasePrice,
                     image: item.image, // Add image here
                 })),
-                supplierId: selectedSupplier?.id || null,
-                supplierName: selectedSupplier?.name || "Supplier Umum",
+                supplierId: selectedSupplier.id,
+                supplierName: selectedSupplier.name,
+                ownerId: selectedOwner?.id || null,
+                ownerName: selectedOwner?.name || null,
                 paymentMethod: paymentMethod,
             });
     
@@ -190,7 +250,7 @@ export default function ProcessPaymentPage() {
                     quantity: item.quantity,
                     purchasePrice: item.purchasePrice,
                     purchaseDate: purchaseDate,
-                    supplierName: selectedSupplier?.name || "Supplier Umum",
+                    supplierName: selectedSupplier.name,
                     transactionId: purchaseTransactionRef.id
                 });
             }
@@ -231,12 +291,46 @@ export default function ProcessPaymentPage() {
                     <Card>
                         <CardHeader><CardTitle>1. Detail Supplier & Pembayaran</CardTitle></CardHeader>
                         <CardContent className="space-y-4">
-                            <div>
-                               <Label>Supplier (Opsional)</Label>
-                               <div className="flex items-center gap-4 mt-2">
-                                    <SupplierDialog onSelectSupplier={setSelectedSupplier}/>
-                                    {selectedSupplier && <p className="text-sm font-medium p-2 border rounded-md bg-muted">{selectedSupplier.name}</p>}
-                               </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                   <Label>Supplier <span className="text-destructive">*</span></Label>
+                                   <div className="flex flex-wrap items-center gap-2 mt-2">
+                                        <EntityPickerDialog
+                                            collectionName="suppliers"
+                                            triggerLabel="Pilih Supplier"
+                                            triggerIcon={<Building className="mr-2 h-4 w-4"/>}
+                                            dialogTitle="Pilih atau Tambah Supplier"
+                                            dialogDescription="Pilih supplier dari daftar yang ada, atau tambahkan supplier baru ke dalam sistem."
+                                            addLabel="Tambah Supplier Baru"
+                                            nameLabel="Nama Supplier"
+                                            namePlaceholder="Nama Perusahaan / Toko"
+                                            emptyText="Belum ada supplier. Silakan tambah baru."
+                                            searchPlaceholder="Cari nama supplier..."
+                                            onSelect={setSelectedSupplier}
+                                        />
+                                        {selectedSupplier && <p className="text-sm font-medium p-2 border rounded-md bg-muted">{selectedSupplier.name}</p>}
+                                   </div>
+                                </div>
+                                <div>
+                                   <Label>Owner (Pemesan)</Label>
+                                   <div className="flex flex-wrap items-center gap-2 mt-2">
+                                        <EntityPickerDialog
+                                            collectionName="owners"
+                                            triggerLabel="Pilih Owner"
+                                            triggerIcon={<Users className="mr-2 h-4 w-4"/>}
+                                            dialogTitle="Pilih atau Tambah Owner"
+                                            dialogDescription="Pilih owner (pemesan) dari daftar, atau tambahkan owner baru. Digunakan untuk mengetahui transaksi ini dipesan oleh siapa."
+                                            addLabel="Tambah Owner Baru"
+                                            nameLabel="Nama Owner"
+                                            namePlaceholder="Nama pemesan"
+                                            emptyText="Belum ada owner. Silakan tambah baru."
+                                            searchPlaceholder="Cari nama owner..."
+                                            showContactFields={false}
+                                            onSelect={setSelectedOwner}
+                                        />
+                                        {selectedOwner && <p className="text-sm font-medium p-2 border rounded-md bg-muted">{selectedOwner.name}</p>}
+                                   </div>
+                                </div>
                             </div>
                             <div>
                                 <Label>Metode Pembayaran</Label>

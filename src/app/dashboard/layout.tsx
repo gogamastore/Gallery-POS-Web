@@ -7,10 +7,15 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetTrigger } from "@/components/ui/sheet";
-import { Search, Menu, Bell } from "lucide-react";
+import { Search, Menu, Bell, Loader2 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import { PurchaseCartProvider } from "@/components/providers/purchase-cart-provider";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "@/lib/firebase";
+import { useAuth } from "@/hooks/use-auth";
 
 function Logo() {
   return (
@@ -26,6 +31,54 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const { user, loading: authLoading } = useAuth();
+  const router = useRouter();
+  const [authorized, setAuthorized] = useState(false);
+
+  // Guard terpusat: hanya role 'admin' yang boleh mengakses dashboard.
+  // Reseller diarahkan ke /reseller, role lain / tanpa role ke halaman login.
+  useEffect(() => {
+    if (authLoading) return;
+    if (!user) {
+      router.replace("/");
+      return;
+    }
+
+    let active = true;
+    (async () => {
+      try {
+        const userDoc = await getDoc(doc(db, "user", user.uid));
+        const role = userDoc.exists() ? userDoc.data().role : null;
+        if (!active) return;
+
+        if (role === "admin") {
+          setAuthorized(true);
+        } else if (role === "reseller") {
+          router.replace("/reseller");
+        } else {
+          router.replace("/");
+        }
+      } catch (error) {
+        if (!active) return;
+        console.error("Gagal memverifikasi akses dashboard:", error);
+        router.replace("/");
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [user, authLoading, router]);
+
+  // Tahan render dashboard sampai status admin terverifikasi
+  // (mencegah konten dashboard sempat berkedip sebelum redirect).
+  if (authLoading || !authorized) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <PurchaseCartProvider>
