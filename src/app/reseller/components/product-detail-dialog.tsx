@@ -11,7 +11,7 @@ import {
 import { Button } from "@/components/ui/button"
 import Image from "next/image"
 import { Badge } from "@/components/ui/badge"
-import { ShoppingCart } from "lucide-react"
+import { ShoppingCart, Loader2 } from "lucide-react"
 import { useCart } from "@/hooks/use-cart"
 import Link from "next/link"
 
@@ -38,9 +38,11 @@ const formatCurrency = (value: string | number): string => {
 
 
 export function ProductDetailDialog({ product, children }: { product: Product, children: React.ReactNode }) {
-    const { addToCart } = useCart();
-    
+    const { addToCart, loading: cartLoading } = useCart();
+
     const handleAddToCart = async () => {
+        // Tunggu keranjang selesai dimuat agar batas 160 produk unik akurat.
+        if (cartLoading) return;
         await addToCart(product, 1);
     }
     
@@ -89,9 +91,13 @@ export function ProductDetailDialog({ product, children }: { product: Product, c
                      <Button asChild variant="outline">
                         <Link href={`/reseller/products/${product.id}`}>Lihat Halaman Produk</Link>
                     </Button>
-                    <Button onClick={handleAddToCart} disabled={product.stock === 0}>
-                        <ShoppingCart className="mr-2 h-4 w-4" />
-                        {product.stock > 0 ? 'Tambah ke Keranjang' : 'Stok Habis'}
+                    <Button onClick={handleAddToCart} disabled={product.stock === 0 || cartLoading}>
+                        {cartLoading ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                            <ShoppingCart className="mr-2 h-4 w-4" />
+                        )}
+                        {product.stock === 0 ? 'Stok Habis' : cartLoading ? 'Menyiapkan…' : 'Tambah ke Keranjang'}
                     </Button>
                 </DialogFooter>
             </DialogContent>

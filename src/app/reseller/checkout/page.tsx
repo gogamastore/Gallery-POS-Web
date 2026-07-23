@@ -26,6 +26,7 @@ import {
   getDoc,
   query,
   writeBatch,
+  increment,
 } from "firebase/firestore";
 import { db, functions } from "@/lib/firebase";
 import { httpsCallable } from "firebase/functions";
@@ -470,6 +471,9 @@ export default function CheckoutPage() {
         : `${selectedRate!.courierName} ${selectedRate!.serviceName}`;
 
       const orderData: Record<string, unknown> = {
+        // Penanda kanal penjualan: memisahkan pesanan marketplace dari
+        // transaksi kasir POS (yang menulis source: 'pos') di koleksi yang sama.
+        source: "marketplace",
         customer: customerDetails.name,
         customerDetails: {
           name: customerDetails.name,
@@ -511,8 +515,24 @@ export default function CheckoutPage() {
         orderData.biteshipServiceName = selectedRate.serviceName;
       }
 
-      const batch = writeBatch(db);
+      // Tulis semua dalam batch. Pengurangan stok memakai increment(-qty)
+      // sehingga TIDAK perlu membaca produk dulu (atomik & jauh lebih cepat
+      // untuk keranjang berisi ratusan produk). Batch dipecah otomatis agar
+      // tidak melewati batas 500 operasi per batch.
+      const MAX_OPS = 450; // headroom di bawah limit 500
+      let batch = writeBatch(db);
+      let ops = 0;
+      const commits: Promise<void>[] = [];
+      const flushIfNeeded = () => {
+        if (ops >= MAX_OPS) {
+          commits.push(batch.commit());
+          batch = writeBatch(db);
+          ops = 0;
+        }
+      };
+
       batch.set(orderRef, orderData);
+      ops++;
 
       // Notifikasi admin
       const notifRef = doc(collection(db, "notifications"));
@@ -524,18 +544,18 @@ export default function CheckoutPage() {
         relatedId: orderRef.id,
         isRead: false,
       });
+      ops++;
 
-      // Kurangi stok
+      // Kurangi stok tiap produk secara atomik, tanpa read.
       for (const item of cart) {
+        flushIfNeeded();
         const productRef = doc(db, "products", item.id);
-        const productDoc = await getDoc(productRef);
-        if (productDoc.exists()) {
-          const currentStock = productDoc.data().stock || 0;
-          batch.update(productRef, { stock: currentStock - item.quantity });
-        }
+        batch.update(productRef, { stock: increment(-item.quantity) });
+        ops++;
       }
 
-      await batch.commit();
+      commits.push(batch.commit());
+      await Promise.all(commits);
 
       // COD → selesai langsung
       if (paymentMethod === "cod") {

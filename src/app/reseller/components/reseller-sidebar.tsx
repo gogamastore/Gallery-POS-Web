@@ -19,7 +19,7 @@ const navItems = [
 // toggle di header.
 export default function ResellerSidebar({ open }: { open: boolean }) {
   const pathname = usePathname();
-  const { totalItems } = useCart();
+  const { distinctItems } = useCart();
 
   if (!open) return null;
 
@@ -44,9 +44,9 @@ export default function ResellerSidebar({ open }: { open: boolean }) {
             >
               <Icon className="h-5 w-5 shrink-0" />
               <span className="flex-1">{item.label}</span>
-              {item.href === "/reseller/cart" && totalItems > 0 && (
+              {item.href === "/reseller/cart" && distinctItems > 0 && (
                 <Badge className="h-5 min-w-5 justify-center p-0 px-1">
-                  {totalItems}
+                  {distinctItems}
                 </Badge>
               )}
             </Link>

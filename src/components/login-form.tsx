@@ -24,6 +24,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import { resolveVerificationStatus } from "@/lib/verification";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import Image from "next/image";
@@ -58,7 +59,18 @@ export default function LoginForm() {
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     setLoading(true);
     try {
-      await signIn(values.email, values.password);
+      const cred = await signIn(values.email, values.password);
+      // Blokir akun yang emailnya belum diverifikasi.
+      const status = await resolveVerificationStatus(cred.user);
+      if (status === "pending") {
+        toast({
+          variant: "destructive",
+          title: "Verifikasi email diperlukan",
+          description: "Silakan verifikasi email Anda untuk masuk.",
+        });
+        router.replace("/verify-email");
+        return;
+      }
       toast({
         title: "Login Berhasil!",
         description: "Selamat datang kembali.",
@@ -118,7 +130,7 @@ export default function LoginForm() {
                 )}
               />
               <div className="text-right text-sm">
-                  <Link href="/auth/action?mode=resetPassword" className="underline text-muted-foreground hover:text-primary">
+                  <Link href="/forgot-password" className="underline text-muted-foreground hover:text-primary">
                     Lupa Password?
                   </Link>
               </div>

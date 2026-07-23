@@ -12,7 +12,9 @@ import {
   ClipboardList,
   Settings,
   ChevronDown,
+  FileClock,
   MapPin,
+  MessageSquare,
 } from "lucide-react";
 import {
   Collapsible,
@@ -24,6 +26,7 @@ import React from "react";
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/orders", label: "Pesanan", icon: ShoppingCart },
+  { href: "/dashboard/chat", label: "Chat", icon: MessageSquare },
   { href: "/dashboard/products", label: "Manajemen Produk", icon: Package },
   { href: "/dashboard/stock-management", label: "Manajemen Stok", icon: Warehouse },
   { href: "/dashboard/purchases", label: "Transaksi Pembelian", icon: Archive },
@@ -47,6 +50,12 @@ const settingsSubMenu = [
     href: "/dashboard/settings/store-address",
     label: "Alamat Toko",
     icon: MapPin,
+    highlight: true,
+  },
+  {
+    href: "/dashboard/settings/store-operasional",
+    label: "Operasional Toko",
+    icon: FileClock,
     highlight: true,
   },
   { href: "/dashboard/settings/bank-accounts", label: "Rekening Bank" },

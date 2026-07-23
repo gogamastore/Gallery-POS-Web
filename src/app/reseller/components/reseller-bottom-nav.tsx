@@ -17,7 +17,7 @@ const navItems = [
 
 export default function BottomNav() {
     const pathname = usePathname();
-    const { totalItems } = useCart();
+    const { distinctItems } = useCart();
 
     return (
         <div className="md:hidden fixed bottom-0 left-0 z-50 w-full h-16 bg-background border-t border-border/40">
@@ -33,8 +33,8 @@ export default function BottomNav() {
                                 isActive ? "text-primary" : "text-muted-foreground"
                             )}
                         >
-                            {item.href === "/reseller/cart" && totalItems > 0 && (
-                                <Badge className="absolute top-1 right-3 h-5 w-5 justify-center p-0">{totalItems}</Badge>
+                            {item.href === "/reseller/cart" && distinctItems > 0 && (
+                                <Badge className="absolute top-1 right-3 h-5 w-5 justify-center p-0">{distinctItems}</Badge>
                             )}
                             <item.icon className={cn("w-5 h-5 mb-1", isActive ? "text-primary" : "text-gray-500 group-hover:text-primary")} />
                             <span className="text-xs text-center leading-tight">

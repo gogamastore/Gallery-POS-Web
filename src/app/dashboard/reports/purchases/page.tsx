@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { collection, getDocs, doc, getDoc, writeBatch, query as firestoreQuery, where, updateDoc } from "firebase/firestore";
+import { collection, getDocs, doc, getDoc, writeBatch, query as firestoreQuery, where, updateDoc, deleteDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import {
   Card,
@@ -52,7 +52,7 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
-import { DollarSign, Package, Calendar as CalendarIcon, FileText, Edit, Plus, Minus, Trash2, Loader2, Search, PlusCircle, ArrowLeft, Printer, Banknote, CreditCard } from "lucide-react";
+import { DollarSign, Package, Calendar as CalendarIcon, FileText, Edit, Plus, Minus, Trash2, Loader2, Search, PlusCircle, ArrowLeft, Printer, Banknote, CreditCard, XCircle } from "lucide-react";
 import { format, isValid, startOfDay, endOfDay } from "date-fns";
 import { id as dateFnsLocaleId } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
@@ -66,6 +66,7 @@ import jsPDF from "jspdf";
 import "jspdf-autotable";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 
 
 declare module 'jspdf' {
@@ -522,6 +523,10 @@ function EditPurchaseDialog({ transaction, onPurchaseUpdated }: { transaction: P
 }
 
 function PurchaseDetailDialog({ transaction, onPurchaseUpdated }: { transaction: PurchaseTransaction, onPurchaseUpdated: () => void }) {
+    const [isCancelling, setIsCancelling] = useState(false);
+    const { toast } = useToast();
+    const [isDialogOpen, setIsDialogOpen] = useState(false);
+
     const generatePdf = () => {
         if (!transaction) return;
         const pdfDoc = new jsPDF();
@@ -561,8 +566,46 @@ function PurchaseDetailDialog({ transaction, onPurchaseUpdated }: { transaction:
         pdfDoc.output("dataurlnewwindow");
     };
 
+    const handleCancelPurchase = async () => {
+        setIsCancelling(true);
+        const batch = writeBatch(db);
+        try {
+            // 1. Return stock for each item in the transaction
+            for (const item of transaction.items) {
+                const productRef = doc(db, "products", item.productId);
+                const productDoc = await getDoc(productRef);
+                if (productDoc.exists()) {
+                    const currentStock = productDoc.data().stock || 0;
+                    // Subtract the purchased quantity to revert stock
+                    batch.update(productRef, { stock: Math.max(0, currentStock - item.quantity) });
+                }
+            }
+
+            // 2. Delete entries in purchase_history related to this transaction
+            const historyQuery = firestoreQuery(collection(db, "purchase_history"), where("transactionId", "==", transaction.id));
+            const historySnapshot = await getDocs(historyQuery);
+            historySnapshot.forEach(historyDoc => {
+                batch.delete(historyDoc.ref);
+            });
+
+            // 3. Delete the transaction itself
+            const transactionRef = doc(db, "purchase_transactions", transaction.id);
+            batch.delete(transactionRef);
+
+            await batch.commit();
+            toast({ title: "Transaksi Dibatalkan", description: "Transaksi telah dihapus dan stok produk telah disesuaikan kembali." });
+            onPurchaseUpdated();
+            setIsDialogOpen(false);
+        } catch (error) {
+            console.error("Error cancelling purchase:", error);
+            toast({ variant: "destructive", title: "Gagal Membatalkan Transaksi" });
+        } finally {
+            setIsCancelling(false);
+        }
+    }
+
     return (
-        <Dialog>
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
                 <Button variant="ghost" size="icon">
                     <FileText className="h-4 w-4" />
@@ -620,7 +663,7 @@ function PurchaseDetailDialog({ transaction, onPurchaseUpdated }: { transaction:
                         </div>
                     </div>
                 </div>
-                <DialogFooter className="justify-between">
+                <DialogFooter className="justify-between items-center">
                     <div className="flex gap-2">
                          <Button onClick={generatePdf} variant="outline">
                             <Printer className="mr-2 h-4 w-4"/> Download Faktur
@@ -628,6 +671,28 @@ function PurchaseDetailDialog({ transaction, onPurchaseUpdated }: { transaction:
                         {transaction.paymentMethod === 'credit' && transaction.paymentStatus !== 'paid' && (
                             <PaymentDialog transaction={transaction} onPaymentSuccess={onPurchaseUpdated}/>
                         )}
+                        <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                                <Button variant="destructive">
+                                    <XCircle className="mr-2 h-4 w-4" /> Batalkan Transaksi
+                                </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                                <AlertDialogHeader>
+                                    <AlertDialogTitle>Batalkan Transaksi Pembelian?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                        Tindakan ini akan menghapus data transaksi, riwayat pembelian, dan **mengurangi stok produk** kembali. Aksi ini tidak dapat dibatalkan.
+                                    </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                    <AlertDialogCancel>Batal</AlertDialogCancel>
+                                    <AlertDialogAction onClick={handleCancelPurchase} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground" disabled={isCancelling}>
+                                        {isCancelling ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
+                                        Ya, Batalkan Transaksi
+                                    </AlertDialogAction>
+                                </AlertDialogFooter>
+                            </AlertDialogContent>
+                        </AlertDialog>
                     </div>
                     <EditPurchaseDialog transaction={transaction} onPurchaseUpdated={onPurchaseUpdated} />
                 </DialogFooter>
@@ -725,10 +790,14 @@ export default function PurchasesReportPage() {
     );
   }, [allTransactions]);
 
-  // Terapkan filter owner di atas filter tanggal.
+  // Terapkan filter owner di atas filter tanggal, lalu urutkan.
   const displayedTransactions = useMemo(() => {
-    if (selectedOwnerId === "all") return filteredTransactions;
-    return filteredTransactions.filter((t) => t.ownerId === selectedOwnerId);
+    const filtered = selectedOwnerId === "all" 
+      ? filteredTransactions 
+      : filteredTransactions.filter((t) => t.ownerId === selectedOwnerId);
+    
+    // Urutkan transaksi dari yang terbaru ke yang terlama
+    return filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [filteredTransactions, selectedOwnerId]);
 
   const { totalPurchaseAmount, totalTransactions, chartData } = useMemo(() => {
@@ -926,5 +995,3 @@ export default function PurchasesReportPage() {
     </div>
   );
 }
-
-    

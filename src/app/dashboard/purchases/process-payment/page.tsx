@@ -240,7 +240,9 @@ export default function ProcessPaymentPage() {
             for (const item of cart) {
                 const productRef = doc(db, "products", item.id);
                 const newStock = (item.stock || 0) + item.quantity;
-                batch.update(productRef, { stock: newStock, purchasePrice: item.purchasePrice });
+                // purchaseAt: waktu produk terakhir dibeli (restock) — dipakai
+                // untuk mengurutkan katalog reseller (terbaru di depan).
+                batch.update(productRef, { stock: newStock, purchasePrice: item.purchasePrice, purchaseAt: serverTimestamp() });
                 
                 // Add to purchase_history
                 const historyRef = doc(collection(db, "purchase_history"));

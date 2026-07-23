@@ -98,8 +98,47 @@ interface Order {
   shippingFee: number;
   date: string;
   validatedAt?: string;
+  /** Kanal penjualan: 'pos' (kasir) atau 'marketplace'. Kosong untuk data lama. */
+  source?: string;
+  /** Nama kasir/validator — terisi untuk POS & pesanan marketplace tervalidasi. */
+  kasir?: string;
   products: OrderProduct[];
 }
+
+/**
+ * Ubah nilai tanggal Firestore ke ISO string dengan aman.
+ * Menangani Timestamp (punya .toDate), string/number, dan nilai kosong/rusak
+ * — mencegah RangeError "Invalid time value" dari .toISOString().
+ */
+const toIsoString = (value: unknown): string => {
+  if (!value) return "";
+  const asTimestamp = value as { toDate?: () => Date };
+  if (typeof asTimestamp?.toDate === "function") {
+    const d = asTimestamp.toDate();
+    return isValid(d) ? d.toISOString() : "";
+  }
+  const d = new Date(value as string | number);
+  return isValid(d) ? d.toISOString() : "";
+};
+
+/** Format tanggal ISO dengan aman; nilai kosong/rusak → "-". */
+const formatDateSafe = (iso?: string, pattern = "dd MMM yyyy, HH:mm") => {
+  if (!iso) return "-";
+  const d = new Date(iso);
+  return isValid(d) ? format(d, pattern, { locale: dateFnsLocaleId }) : "-";
+};
+
+/** Nama pelanggan; penjualan POS umumnya tanpa pelanggan → "Toko Offline". */
+const customerName = (order: Order) => {
+  const name = (order.customerDetails?.name || order.customer || "").trim();
+  return name === "" ? "Toko Offline" : name;
+};
+
+/** Nama kasir; kosong/N/A → "-". */
+const kasirName = (order: Order) => {
+  const k = (order.kasir || "").trim();
+  return k === "" || k === "N/A" ? "-" : k;
+};
 
 const formatCurrency = (amount: number) => {
   return new Intl.NumberFormat("id-ID", {
@@ -112,9 +151,9 @@ const formatCurrency = (amount: number) => {
 const processSalesDataForChart = (orders: Order[]) => {
     const salesByDate: { [key: string]: number } = {};
     orders.forEach(order => {
-        // Use validatedAt for chart data as well
-        const dateString = order.validatedAt || order.date;
-        const date = new Date(dateString); 
+        // Kelompokkan pakai waktu diproses (validatedAt) agar konsisten
+        // dengan rentang query.
+        const date = new Date(order.validatedAt || order.date);
         if (isValid(date)) {
             const formattedDate = format(date, 'd MMM', { locale: dateFnsLocaleId });
             if (salesByDate[formattedDate]) {
@@ -456,8 +495,8 @@ function OrderDetailDialog({ orderId, onOrderUpdated }: { orderId: string, onOrd
                 total,
                 subtotal: data.subtotal || 0,
                 shippingFee: data.shippingFee || 0,
-                date: data.date.toDate().toISOString(),
-                validatedAt: data.validatedAt ? data.validatedAt.toDate().toISOString() : data.date.toDate().toISOString(),
+                date: toIsoString(data.date),
+                validatedAt: toIsoString(data.validatedAt) || toIsoString(data.date),
                 products: data.products || [],
              } as Order);
         }
@@ -487,7 +526,7 @@ function OrderDetailDialog({ orderId, onOrderUpdated }: { orderId: string, onOrd
       pdfDoc.text("Faktur Pesanan", 14, 22);
       pdfDoc.setFontSize(10);
       pdfDoc.text(`ID Pesanan: ${order.id}`, 14, 32);
-      pdfDoc.text(`Tanggal: ${format(new Date(order.date), 'dd MMM yyyy, HH:mm', { locale: dateFnsLocaleId })}`, 14, 37);
+      pdfDoc.text(`Tanggal: ${formatDateSafe(order.validatedAt || order.date)}`, 14, 37);
   
       const customerInfo = order.customerDetails;
       pdfDoc.text("Informasi Pelanggan:", 14, 47);
@@ -533,7 +572,7 @@ function OrderDetailDialog({ orderId, onOrderUpdated }: { orderId: string, onOrd
         <DialogHeader>
           <DialogTitle>Faktur #{order?.id}</DialogTitle>
            <DialogDescription>
-              {order ? `Detail pesanan yang divalidasi pada ${format(new Date(order.validatedAt!), 'dd MMMM yyyy, HH:mm', { locale: dateFnsLocaleId })}` : 'Memuat detail pesanan...'}
+              {order ? `Detail pesanan yang diproses pada ${formatDateSafe(order.validatedAt || order.date, 'dd MMMM yyyy, HH:mm')}` : 'Memuat detail pesanan...'}
             </DialogDescription>
         </DialogHeader>
         {loading ? <div className="text-center p-8"><Loader2 className="h-6 w-6 animate-spin mx-auto"/></div> : order ? (
@@ -609,6 +648,8 @@ export default function SalesReportPage() {
     to: endOfDay(new Date()),
   });
   const [orders, setOrders] = useState<Order[]>([]);
+  // Filter kanal penjualan: 'all' (default, tampil pertama) / 'pos' / 'marketplace'
+  const [sourceFilter, setSourceFilter] = useState<"all" | "pos" | "marketplace">("all");
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -625,12 +666,17 @@ export default function SalesReportPage() {
             productMap.set(doc.id, { id: doc.id, ...doc.data()} as Product);
         });
 
-        // Query based on validatedAt and relevant statuses
+        // Rentang memakai `validatedAt` (waktu pesanan DIPROSES kasir/admin),
+        // bukan `date` (waktu pembeli membuat pesanan) — agar laporan memuat
+        // pesanan yang diproses pada hari itu. Draf POS belum punya
+        // validatedAt, jadi otomatis tidak terhitung sebagai penjualan.
+        // Status mencakup dua kanal & dua penulisan (POS huruf kecil,
+        // marketplace kapital).
         const ordersQuery = query(
             collection(db, "orders"),
             where('validatedAt', '>=', from),
             where('validatedAt', '<=', to),
-            where('status', 'in', ['Processing', 'processing', 'Shipped', 'shipped', 'Delivered', 'delivered'])
+            where('status', 'in', ['Processing', 'processing', 'success', 'Shipped', 'shipped', 'Delivered', 'delivered'])
         );
       
         const querySnapshot = await getDocs(ordersQuery);
@@ -665,15 +711,17 @@ export default function SalesReportPage() {
               subtotal: data.subtotal || 0,
               shippingFee: data.shippingFee || 0,
               products: productsWithCogs,
-              date: data.date.toDate ? data.date.toDate().toISOString() : new Date(data.date).toISOString(),
-              validatedAt: data.validatedAt ? data.validatedAt.toDate().toISOString() : new Date(data.date).toISOString(),
-              customerDetails 
+              date: toIsoString(data.date),
+              validatedAt: toIsoString(data.validatedAt) || toIsoString(data.date),
+              customerDetails
           } as Order;
       });
       let ordersData = await Promise.all(ordersDataPromises);
       
-      // Sort by validatedAt descending
-      ordersData = ordersData.sort((a, b) => new Date(b.validatedAt!).getTime() - new Date(a.validatedAt!).getTime());
+      // Urutkan berdasarkan waktu diproses (validatedAt), terbaru dulu
+      ordersData = ordersData.sort(
+        (a, b) => new Date(b.validatedAt || b.date).getTime() - new Date(a.validatedAt || a.date).getTime()
+      );
 
       setOrders(ordersData);
     } catch (error) {
@@ -697,8 +745,15 @@ export default function SalesReportPage() {
     setDateRange({ from: todayStart, to: todayEnd });
   };
 
+  // Filter kanal penjualan di sisi klien (data lama tanpa `source` hanya
+  // muncul pada pilihan "Semua").
+  const filteredOrders = useMemo(() => {
+    if (sourceFilter === "all") return orders;
+    return orders.filter((o) => o.source === sourceFilter);
+  }, [orders, sourceFilter]);
+
   const { totalRevenue, totalOrders, grossProfit, totalCogs, chartData } = useMemo(() => {
-    const validOrders = orders; // Already filtered by status in query
+    const validOrders = filteredOrders; // status sudah difilter di query
     
     const revenue = validOrders.reduce((acc, order) => acc + order.total, 0);
     const ordersCount = validOrders.length;
@@ -719,7 +774,7 @@ export default function SalesReportPage() {
         totalCogs: cogs,
         chartData: chartDataProcessed
     };
-}, [orders]);
+}, [filteredOrders]);
 
 
   if (loading && orders.length === 0) {
@@ -785,6 +840,25 @@ export default function SalesReportPage() {
             </Popover>
             <Button onClick={handleFilter}>Filter</Button>
             <Button variant="outline" onClick={handleReset}>Reset</Button>
+
+            {/* Filter kanal penjualan: Semua (default) / POS / Marketplace */}
+            <div className="flex items-center gap-2 ml-auto">
+                <span className="text-sm text-muted-foreground">Sumber:</span>
+                {([
+                    { value: "all", label: "Semua" },
+                    { value: "pos", label: "POS" },
+                    { value: "marketplace", label: "Marketplace" },
+                ] as const).map((opt) => (
+                    <Button
+                        key={opt.value}
+                        size="sm"
+                        variant={sourceFilter === opt.value ? "default" : "outline"}
+                        onClick={() => setSourceFilter(opt.value)}
+                    >
+                        {opt.label}
+                    </Button>
+                ))}
+            </div>
         </CardContent>
       </Card>
 
@@ -860,14 +934,15 @@ export default function SalesReportPage() {
                 <TableRow>
                     <TableHead>Order ID</TableHead>
                     <TableHead>Pelanggan</TableHead>
-                    <TableHead>Tanggal Validasi</TableHead>
+                    <TableHead>Kasir</TableHead>
+                    <TableHead>Tanggal Diproses</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Total</TableHead>
                 </TableRow>
                 </TableHeader>
                 <TableBody>
-                {orders.length > 0 ? (
-                    orders.map((order) => {
+                {filteredOrders.length > 0 ? (
+                    filteredOrders.map((order) => {
                         const statusText = order.status.toLowerCase() === 'delivered'
                             ? 'Selesai'
                             : order.status.toLowerCase() === 'shipped'
@@ -880,8 +955,9 @@ export default function SalesReportPage() {
                                 <TableCell>
                                 <OrderDetailDialog orderId={order.id} onOrderUpdated={fetchOrders} />
                                 </TableCell>
-                                <TableCell>{order.customerDetails?.name || order.customer}</TableCell>
-                                <TableCell>{format(new Date(order.validatedAt!), 'dd MMM yyyy, HH:mm', { locale: dateFnsLocaleId })}</TableCell>
+                                <TableCell>{customerName(order)}</TableCell>
+                                <TableCell>{kasirName(order)}</TableCell>
+                                <TableCell>{formatDateSafe(order.validatedAt || order.date)}</TableCell>
                                 <TableCell>
                                 <Badge
                                     variant="outline"
@@ -902,7 +978,7 @@ export default function SalesReportPage() {
                     })
                 ) : (
                     <TableRow>
-                    <TableCell colSpan={5} className="text-center h-24">
+                    <TableCell colSpan={6} className="text-center h-24">
                         Tidak ada data penjualan untuk rentang tanggal ini.
                     </TableCell>
                     </TableRow>

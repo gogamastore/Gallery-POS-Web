@@ -1,10 +1,10 @@
 
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode, useCallback } from 'react';
 import { useAuth } from './use-auth';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, doc, writeBatch, deleteDoc, onSnapshot, getDoc, query, where, Timestamp, setDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, doc, writeBatch, deleteDoc, onSnapshot, getDoc, query, where, documentId, Timestamp, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useToast } from './use-toast';
 
 interface Product {
@@ -17,7 +17,6 @@ interface Product {
   discountPrice?: string;
   stock: number;
   sku: string;
-  weightGram?: number;
 }
 
 interface CartItem extends Product {
@@ -32,6 +31,7 @@ interface CartContextType {
   updateQuantity: (productId: string, quantity: number) => Promise<void>;
   clearCart: () => Promise<void>;
   totalItems: number;
+  distinctItems: number;
   totalAmount: number;
   loading: boolean;
 }
@@ -57,51 +57,83 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const { user } = useAuth();
   const { toast } = useToast();
 
+  // Cache produk (per sesi) agar tidak fetch ulang tiap keranjang berubah.
+  const productCacheRef = useRef<Map<string, Product>>(new Map());
+  // Cache promosi ber-TTL agar tidak query promosi setiap snapshot.
+  const promoCacheRef = useRef<{ map: Map<string, number>; expires: number } | null>(null);
+
+  // Ambil promosi aktif; hasil di-cache selama 60 detik.
+  const getActivePromos = useCallback(async (): Promise<Map<string, number>> => {
+    const cached = promoCacheRef.current;
+    if (cached && cached.expires > Date.now()) return cached.map;
+
+    const now = new Date();
+    const promoQuery = query(collection(db, "promotions"), where("endDate", ">", now));
+    const promoSnapshot = await getDocs(promoQuery);
+    const map = new Map<string, number>();
+    promoSnapshot.forEach((d) => {
+      const data = d.data() as Promotion;
+      if (data.startDate.toDate() <= now) {
+        map.set(data.productId, data.discountPrice);
+      }
+    });
+    promoCacheRef.current = { map, expires: Date.now() + 60_000 };
+    return map;
+  }, []);
+
+  // Ambil produk yang BELUM ada di cache, dalam batch `documentId() in`
+  // (maks 30 id/query) — jauh lebih sedikit round-trip dibanding per-item.
+  const fetchMissingProducts = useCallback(async (ids: string[]) => {
+    const cache = productCacheRef.current;
+    const missing = ids.filter((id) => !cache.has(id));
+    if (missing.length === 0) return;
+
+    for (let i = 0; i < missing.length; i += 30) {
+      const chunk = missing.slice(i, i + 30);
+      const snap = await getDocs(
+        query(collection(db, "products"), where(documentId(), "in", chunk))
+      );
+      snap.forEach((d) => {
+        cache.set(d.id, { id: d.id, ...(d.data() as Omit<Product, "id">) });
+      });
+    }
+  }, []);
+
   // Subscribe to cart changes in Firestore
   useEffect(() => {
     if (user) {
       setLoading(true);
       const cartRef = collection(db, 'user', user.uid, 'cart');
-      
+
       const unsubscribe = onSnapshot(cartRef, async (snapshot) => {
         try {
-            // Fetch active promotions once
-            const now = new Date();
-            const promoQuery = query(collection(db, "promotions"), where("endDate", ">", now));
-            const promoSnapshot = await getDocs(promoQuery);
-            const activePromos = new Map<string, number>();
-            promoSnapshot.forEach(doc => {
-                const data = doc.data() as Promotion;
-                if (data.startDate.toDate() <= now) {
-                    activePromos.set(data.productId, data.discountPrice);
+            const ids = snapshot.docs.map((d) => d.id);
+            const [activePromos] = await Promise.all([
+              getActivePromos(),
+              fetchMissingProducts(ids),
+            ]);
+
+            const cache = productCacheRef.current;
+            const cartItems = snapshot.docs
+              .map((cartDoc) => {
+                const productData = cache.get(cartDoc.id);
+                if (!productData) return null;
+
+                let finalPrice = parseCurrency(productData.price);
+                if (activePromos.has(cartDoc.id)) {
+                  finalPrice = activePromos.get(cartDoc.id)!;
                 }
-            });
 
-            const productPromises = snapshot.docs.map(async (cartDoc) => {
-                const cartData = cartDoc.data();
-                const productRef = doc(db, 'products', cartDoc.id);
-                const productSnap = await getDoc(productRef);
+                return {
+                  ...productData,
+                  id: cartDoc.id,
+                  quantity: cartDoc.data().quantity,
+                  finalPrice,
+                  price: productData.price,
+                } as CartItem;
+              })
+              .filter((item): item is CartItem => item !== null);
 
-                if (productSnap.exists()) {
-                    const productData = productSnap.data() as Omit<Product, 'id'>;
-                    
-                    let finalPrice = parseCurrency(productData.price);
-                    if (activePromos.has(cartDoc.id)) {
-                        finalPrice = activePromos.get(cartDoc.id)!;
-                    }
-
-                    return {
-                    ...productData,
-                    id: cartDoc.id,
-                    quantity: cartData.quantity,
-                    finalPrice: finalPrice,
-                    price: productData.price, // Keep original price for reference if needed
-                    } as CartItem;
-                }
-                return null;
-            });
-
-            const cartItems = (await Promise.all(productPromises)).filter(item => item !== null) as CartItem[];
             setCart(cartItems);
 
         } catch (error) {
@@ -122,7 +154,7 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setCart([]);
       setLoading(false);
     }
-  }, [user, toast]);
+  }, [user, toast, getActivePromos, fetchMissingProducts]);
 
   const addToCart = async (product: Product, quantity: number = 1) => {
     if (!user) {
@@ -130,6 +162,17 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return;
     }
     
+    // Logic to check if adding a NEW unique product would exceed the 160 limit
+    const itemExists = cart.some(item => item.id === product.id);
+    if (!itemExists && cart.length >= 160) {
+        toast({
+            variant: 'destructive',
+            title: 'Keranjang Penuh',
+            description: 'Maaf, Keranjang Anda Penuh, harap checkout terlebih dahulu pesanan anda, lalu mengisi kembali keranjang anda'
+        });
+        return;
+    }
+
     const cartRef = doc(db, 'user', user.uid, 'cart', product.id);
     
     try {
@@ -221,14 +264,18 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }
 
   const totalItems = cart.reduce((total, item) => total + item.quantity, 0);
+  // Jumlah produk unik (banyaknya productId) di keranjang — dipakai untuk
+  // badge ikon keranjang, bukan total kuantitas.
+  const distinctItems = cart.length;
   const totalAmount = cart.reduce((total, item) => total + (item.finalPrice * item.quantity), 0);
-  
+
   const value = {
-      cart, 
-      addToCart, 
-      removeFromCart, 
-      updateQuantity, 
-      clearCart, 
+      cart,
+      addToCart,
+      removeFromCart,
+      updateQuantity,
+      clearCart,
+      distinctItems,
       totalItems,
       totalAmount,
       loading

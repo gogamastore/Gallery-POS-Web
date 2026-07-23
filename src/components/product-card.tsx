@@ -5,7 +5,7 @@ import Image from "next/image";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { ShoppingCart } from "lucide-react";
+import { ShoppingCart, Loader2 } from "lucide-react";
 import { useCart } from "@/hooks/use-cart";
 import { useToast } from "@/hooks/use-toast";
 import Link from "next/link";
@@ -32,12 +32,14 @@ const formatCurrency = (value: string | number): string => {
 }
 
 export default function ProductCard({ product, showStockProgress = false }: { product: Product, showStockProgress?: boolean }) {
-  const { addToCart } = useCart();
+  const { addToCart, loading: cartLoading } = useCart();
   const { toast } = useToast();
-  
+
   const handleAddToCart = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
     e.preventDefault();
+    // Tunggu keranjang selesai dimuat agar batas 160 produk unik akurat.
+    if (cartLoading) return;
     try {
       await addToCart(product, 1);
     } catch (error) {
@@ -82,9 +84,13 @@ export default function ProductCard({ product, showStockProgress = false }: { pr
             <p className="text-base font-bold text-primary">{formatCurrency(finalPrice)}</p>
           </div>
         </div>
-        <Button variant="outline" size="sm" className="w-full mt-3" onClick={handleAddToCart} disabled={product.stock === 0}>
-            <ShoppingCart className="mr-2 h-4 w-4"/>
-            {product.stock > 0 ? "Tambah" : "Stok Habis"}
+        <Button variant="outline" size="sm" className="w-full mt-3" onClick={handleAddToCart} disabled={product.stock === 0 || cartLoading}>
+            {cartLoading ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin"/>
+            ) : (
+                <ShoppingCart className="mr-2 h-4 w-4"/>
+            )}
+            {product.stock === 0 ? "Stok Habis" : cartLoading ? "Menyiapkan…" : "Tambah"}
         </Button>
       </CardContent>
     </Card>

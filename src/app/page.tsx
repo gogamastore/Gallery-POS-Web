@@ -8,6 +8,7 @@ import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Loader2 } from "lucide-react";
 import LoginForm from "@/components/login-form";
+import { resolveVerificationStatus } from "@/lib/verification";
 
 export default function RootPage() {
   const { user, loading } = useAuth();
@@ -21,6 +22,13 @@ export default function RootPage() {
     if (user) {
       const checkRoleAndRedirect = async () => {
         try {
+          // Blokir akun yang emailnya belum diverifikasi.
+          const verification = await resolveVerificationStatus(user);
+          if (verification === "pending") {
+            router.replace('/verify-email');
+            return;
+          }
+
           const userDocRef = doc(db, "user", user.uid);
           const userDoc = await getDoc(userDocRef);
 

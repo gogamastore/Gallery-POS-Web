@@ -17,10 +17,20 @@ import {
   Building,
   LayoutGrid,
   MapPin,
+  Power,
 } from "lucide-react";
 import Link from "next/link";
 
 const settingsCards = [
+  // ── Operasional Toko / Libur ────────────────────────────────
+  {
+    title: "Operasional Toko",
+    description:
+      "Aktifkan mode Libur Toko dan tampilkan pemberitahuan yang tidak bisa ditutup di halaman reseller.",
+    icon: Power,
+    href: "/dashboard/settings/store-operasional",
+    highlight: true,
+  },
   // ── Baru: Alamat Toko / Origin Biteship ─────────────────────
   {
     title: "Alamat Toko",

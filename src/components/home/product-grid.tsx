@@ -26,6 +26,7 @@ interface Product {
   description?: string;
   isPromo?: boolean;
   discountPrice?: string;
+  purchaseAt?: Timestamp; // waktu terakhir produk dibeli/restock (untuk urutan)
 }
 
 interface Promotion {
@@ -109,18 +110,27 @@ export default function ProductGrid({ searchTerm, category, viewMode = "grid" }:
             );
         }
 
-        // Sorting: by stock status first, then by name
-        filtered.sort((a, b) => {
-            if (a.stock > 0 && b.stock === 0) {
-                return -1;
-            }
-            if (a.stock === 0 && b.stock > 0) {
-                return 1;
-            }
+        // Urutan katalog:
+        //  1. Produk habis (stok 0) selalu di paling belakang.
+        //  2. Sisanya diurut berdasarkan purchaseAt TERBARU dulu
+        //     (produk yang baru dibeli/restock tampil di depan).
+        //  3. Fallback stabil: produk tanpa purchaseAt dianggap paling lama,
+        //     lalu urut abjad.
+        const stockRank = (p: Product) => (p.stock > 0 ? 0 : 1);
+        const purchaseMs = (p: Product) => (p.purchaseAt ? p.purchaseAt.toMillis() : 0);
+
+        // Salin dulu agar tidak mengubah array asli (allProducts) secara langsung.
+        const sorted = [...filtered].sort((a, b) => {
+            const byStock = stockRank(a) - stockRank(b);
+            if (byStock !== 0) return byStock;
+
+            const byPurchase = purchaseMs(b) - purchaseMs(a);
+            if (byPurchase !== 0) return byPurchase;
+
             return a.name.localeCompare(b.name);
         });
-        
-        return filtered;
+
+        return sorted;
     }, [allProducts, category, searchTerm]);
 
     // ── Render bertahap saat scroll (virtualisasi sederhana) ──────────

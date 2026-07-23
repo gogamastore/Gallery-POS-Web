@@ -1,10 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import ResellerHeader from "./reseller-header";
 import ResellerSidebar from "./reseller-sidebar";
 import BottomNav from "./reseller-bottom-nav";
 import Footer from "@/components/layout/footer";
+import StoreClosedOverlay from "@/components/reseller/store-closed-overlay";
+import { useAuth } from "@/hooks/use-auth";
+import { resolveVerificationStatus } from "@/lib/verification";
 
 // Kerangka tampilan reseller yang responsif:
 //  • Mobile  → bottom navigation bar.
@@ -12,6 +16,23 @@ import Footer from "@/components/layout/footer";
 //    lewat tombol toggle di header.
 export default function ResellerShell({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const { user } = useAuth();
+  const router = useRouter();
+
+  // Blokir pengguna yang login tapi emailnya belum diverifikasi
+  // (mis. mengakses /reseller langsung via URL). Tamu tidak terpengaruh.
+  useEffect(() => {
+    if (!user) return;
+    let active = true;
+    resolveVerificationStatus(user)
+      .then((status) => {
+        if (active && status === "pending") router.replace("/verify-email");
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [user, router]);
 
   return (
     <div className="relative flex min-h-dvh flex-col bg-background">
@@ -24,6 +45,7 @@ export default function ResellerShell({ children }: { children: React.ReactNode 
         </div>
       </div>
       <BottomNav />
+      <StoreClosedOverlay />
     </div>
   );
 }

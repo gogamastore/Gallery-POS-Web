@@ -2,12 +2,14 @@
 "use client"
 
 import { Button } from "@/components/ui/button"
-import { PanelLeft, ShoppingCart, User, Archive } from "lucide-react"
+import { PanelLeft, ShoppingCart, User, Archive, MessageSquare } from "lucide-react"
 import Link from "next/link"
 import { useCart } from "@/hooks/use-cart"
 import { Badge } from "@/components/ui/badge"
 import { useAuth } from "@/hooks/use-auth"
 import { useRouter } from "next/navigation"
+import { doc, onSnapshot } from "firebase/firestore"
+import { db } from "@/lib/firebase"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -30,14 +32,27 @@ function Logo() {
 }
 
 export default function ResellerHeader({ onToggleSidebar }: { onToggleSidebar?: () => void }) {
-    const { totalItems, loading: cartLoading } = useCart();
+    const { distinctItems, loading: cartLoading } = useCart();
     const { user, signOut } = useAuth();
     const router = useRouter();
     const [isMounted, setIsMounted] = useState(false);
+    const [chatUnread, setChatUnread] = useState(0);
 
     useEffect(() => {
         setIsMounted(true);
     }, []);
+
+    // Badge pesan belum dibaca dari admin
+    useEffect(() => {
+        if (!user) {
+            setChatUnread(0);
+            return;
+        }
+        const unsub = onSnapshot(doc(db, "chats", user.uid), (snap) => {
+            setChatUnread(snap.exists() ? (snap.data().unreadForUser || 0) : 0);
+        });
+        return () => unsub();
+    }, [user]);
 
     const handleSignOut = async () => {
         await signOut();
@@ -115,10 +130,18 @@ export default function ResellerHeader({ onToggleSidebar }: { onToggleSidebar?: 
             <div className="flex items-center gap-2">
               <Button variant="ghost" size="icon" asChild>
                 <Link href="/reseller/cart" className="relative">
-                    {isMounted && !cartLoading && totalItems > 0 && (
-                         <Badge className="absolute -top-2 -right-2 h-5 w-5 justify-center p-0">{totalItems}</Badge>
+                    {isMounted && !cartLoading && distinctItems > 0 && (
+                         <Badge className="absolute -top-2 -right-2 h-5 w-5 justify-center p-0">{distinctItems}</Badge>
                     )}
                     <ShoppingCart className="h-5 w-5" />
+                </Link>
+              </Button>
+              <Button variant="ghost" size="icon" asChild>
+                <Link href="/reseller/chat" className="relative">
+                    {isMounted && chatUnread > 0 && (
+                         <Badge className="absolute -top-2 -right-2 h-5 w-5 justify-center p-0">{chatUnread}</Badge>
+                    )}
+                    <MessageSquare className="h-5 w-5" />
                 </Link>
               </Button>
                <Button variant="ghost" size="icon" asChild>

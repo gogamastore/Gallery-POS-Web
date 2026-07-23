@@ -13,11 +13,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/use-auth";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
 import { doc, setDoc, addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { sendVerificationEmail } from "@/lib/verification";
 import { Loader2 } from "lucide-react";
 import Image from "next/image";
 
@@ -34,16 +35,10 @@ export default function RegisterPage() {
       whatsapp: '62',
       password: ''
   });
-  const { user, loading: authLoading, createUser } = useAuth();
+  const { loading: authLoading, createUser } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (!authLoading && user) {
-      router.push('/reseller');
-    }
-  }, [user, authLoading, router]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { id, value } = e.target;
@@ -79,14 +74,16 @@ export default function RegisterPage() {
       const userCredential = await createUser(formData.email, formData.password);
       const newUser = userCredential.user;
 
-      // 2. Save user profile and role to Firestore
+      // 2. Save user profile and role to Firestore (verificationStatus 'pending')
       await setDoc(doc(db, "user", newUser.uid), {
           name: formData.name.trim(),
           email: formData.email,
           whatsapp: formData.whatsapp,
-          role: 'reseller' // Ensure role is always reseller
+          role: 'reseller', // Ensure role is always reseller
+          verificationStatus: 'pending', // wajib verifikasi email sebelum bisa login
+          createdAt: serverTimestamp(), // tanggal akun dibuat (Firestore Timestamp)
       });
-      
+
       // 3. Create a notification for the new reseller
       await addDoc(collection(db, "notifications"), {
         title: "Reseller Baru Terdaftar",
@@ -97,12 +94,15 @@ export default function RegisterPage() {
         isRead: false
       });
 
+      // 4. Kirim email verifikasi, lalu arahkan ke halaman verifikasi.
+      await sendVerificationEmail(newUser);
+
       toast({
         title: "Pendaftaran Berhasil!",
-        description: "Akun reseller Anda telah dibuat. Anda akan diarahkan...",
+        description: "Silakan verifikasi email Anda untuk mengaktifkan akun.",
       });
-      
-      router.push('/reseller');
+
+      router.replace('/verify-email');
 
     } catch (error: any) {
       console.error("Failed to register", error);
@@ -120,7 +120,7 @@ export default function RegisterPage() {
     }
   };
   
-  if (authLoading || user) {
+  if (authLoading) {
     return (
         <div className="flex h-screen items-center justify-center">
             <Loader2 className="h-8 w-8 animate-spin" />

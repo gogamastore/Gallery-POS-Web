@@ -186,10 +186,6 @@ const toNum = (v: unknown): number => {
   return 0;
 };
 
-function isPaid(paymentStatus: string) {
-  return ["paid", "settlement", "Paid"].includes(paymentStatus);
-}
-
 function fromFirestore(id: string, data: Record<string, any>): Order {
   const status = data.status ?? "pending";
   return {
@@ -1001,11 +997,10 @@ export default function OrdersPage() {
     // "Belum Bayar" = pending_payment (menunggu pembayaran Midtrans)
     const toProcess = base.filter((o) => o.paymentStatus === "pending_payment");
 
-    // "Perlu Dikirim" = LUNAS + PROCESSING (siap kirim)
-    const toShip = base.filter(
-      (o) =>
-        isPaid(o.paymentStatus) &&
-        ["processing", "Processing"].includes(o.status)
+    // "Perlu Dikirim" = status PROCESSING saja. Status pembayaran hanya
+    // ditampilkan (badge) di daftar/detail, BUKAN syarat untuk masuk tab ini.
+    const toShip = base.filter((o) =>
+      ["processing", "Processing"].includes(o.status)
     );
 
     // "Dikirim" = status shipped/dikirim (kurir sudah pickup)

@@ -69,7 +69,7 @@ export default function ProductDetailPage() {
   const router = useRouter();
   const params = useParams();
   const { toast } = useToast();
-  const { addToCart } = useCart();
+  const { addToCart, loading: cartLoading } = useCart();
   const productId = params.productId as string;
 
   const fetchProductDetails = useCallback(async () => {
@@ -124,7 +124,9 @@ export default function ProductDetailPage() {
   }
 
   const handleAddToCart = async () => {
-    if (!product) return;
+    // Tunggu keranjang selesai dimuat agar pengecekan batas 160 produk unik
+    // memakai jumlah item yang akurat (menutup celah race saat buka tab baru).
+    if (!product || cartLoading) return;
     setIsAddingToCart(true);
     try {
         await addToCart(product, quantity);
@@ -288,13 +290,13 @@ export default function ProductDetailPage() {
                                     </Button>
                                 </div>
                             </div>
-                            <Button onClick={handleAddToCart} size="lg" className="flex-1 font-headline text-base h-12" disabled={!stockAvailable || isAddingToCart}>
-                                {isAddingToCart ? (
+                            <Button onClick={handleAddToCart} size="lg" className="flex-1 font-headline text-base h-12" disabled={!stockAvailable || isAddingToCart || cartLoading}>
+                                {(isAddingToCart || cartLoading) ? (
                                     <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                                 ) : (
                                     <ShoppingCart className="mr-2 h-5 w-5" />
                                 )}
-                                {stockAvailable ? 'Tambah ke Keranjang' : 'Stok Habis'}
+                                {!stockAvailable ? 'Stok Habis' : cartLoading ? 'Menyiapkan keranjang…' : 'Tambah ke Keranjang'}
                             </Button>
                         </div>
                     </div>
@@ -362,13 +364,13 @@ export default function ProductDetailPage() {
                         <Plus className="h-4 w-4" />
                     </Button>
                 </div>
-                <Button onClick={handleAddToCart} size="lg" className="flex-1 font-headline h-12" disabled={!stockAvailable || isAddingToCart}>
-                    {isAddingToCart ? (
+                <Button onClick={handleAddToCart} size="lg" className="flex-1 font-headline h-12" disabled={!stockAvailable || isAddingToCart || cartLoading}>
+                    {(isAddingToCart || cartLoading) ? (
                             <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                         ) : (
                             <ShoppingCart className="mr-2 h-5 w-5" />
                     )}
-                    {stockAvailable ? 'Tambah' : 'Stok Habis'}
+                    {!stockAvailable ? 'Stok Habis' : cartLoading ? 'Menyiapkan…' : 'Tambah'}
                 </Button>
             </div>
         </div>
