@@ -5,8 +5,8 @@ import './globals.css';
 import { AuthProvider } from '@/hooks/use-auth';
 import { ThemeProvider } from '@/components/providers/theme-provider';
 
-const APP_NAME = "Gogama Store";
-const APP_DESCRIPTION = "An intelligent order management system.";
+const APP_NAME = "Manafidh Store";
+const APP_DESCRIPTION = "Marketplace Gallery Makassar.";
 
 export const metadata: Metadata = {
   applicationName: APP_NAME,

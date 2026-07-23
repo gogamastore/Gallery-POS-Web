@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   title: "Gogama Store",
   description: "Your one-stop shop for everything.",
   icons: {
-    icon: 'https://firebasestorage.googleapis.com/v0/b/orderflow-r7jsk.firebasestorage.app/o/ic_gogama_logo.png?alt=media&token=c7caf8ae-553a-4cf8-a4ae-bce1446b599c',
+    icon: 'https://firebasestorage.googleapis.com/v0/b/gallerypos.firebasestorage.app/o/favicon.ico?alt=media&token=dbfd687f-19e6-4bbc-8383-fbcf68c21aea',
   },
 };
 

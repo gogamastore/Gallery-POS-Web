@@ -37,7 +37,7 @@ const formSchema = z.object({
 
 function Logo() {
   return (
-    <Image src="https://firebasestorage.googleapis.com/v0/b/gallerypos.firebasestorage.app/o/GM%20logo.png?alt=media&token=496198f1-0dd2-4237-b4df-c04cf325083d" alt="Gogama Store Logo" width={75} height={75} priority />
+    <Image src="https://firebasestorage.googleapis.com/v0/b/gallerypos.firebasestorage.app/o/Manafidh%20Logo.png?alt=media&token=4472e2c9-c319-4222-85e8-708dbf36e7be" alt="Manafidh Store Logo" width={75} height={75} priority />
   );
 }
 

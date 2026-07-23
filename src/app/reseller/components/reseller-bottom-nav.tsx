@@ -3,14 +3,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, LayoutGrid, ShoppingCart, User } from "lucide-react";
+import { Home, ShoppingBag, ShoppingCart, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCart } from "@/hooks/use-cart";
 import { Badge } from "@/components/ui/badge";
 
 const navItems = [
     { href: "/reseller", label: "Beranda", icon: Home },
-    { href: "/reseller/trending", label: "Katalog Produk", icon: LayoutGrid },
+    { href: "/reseller/trending", label: "Produk", icon: ShoppingBag  },
     { href: "/reseller/cart", label: "Keranjang", icon: ShoppingCart },
     { href: "/reseller/profile", label: "Profil", icon: User },
 ];
