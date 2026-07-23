@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { createContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, ReactNode } from 'react';
 
 interface FilterContextType {
   searchTerm: string;
@@ -28,4 +28,14 @@ export const FilterProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       {children}
     </FilterContext.Provider>
   );
+};
+
+// Dipakai bersama oleh kotak pencarian di app bar dan halaman Katalog
+// Produk, supaya keduanya membaca/menulis state pencarian yang sama.
+export const useResellerFilters = () => {
+  const context = useContext(FilterContext);
+  if (!context) {
+    throw new Error('useResellerFilters harus dipakai di dalam <FilterProvider>');
+  }
+  return context;
 };

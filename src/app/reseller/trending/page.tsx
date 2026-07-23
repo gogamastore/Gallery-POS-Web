@@ -4,10 +4,12 @@
 import { useState } from "react";
 import ProductFilters from "../components/product-filters";
 import ProductGrid from "@/components/home/product-grid";
+import { useResellerFilters } from "@/components/providers/reseller-filter-provider";
 
 export default function CatalogPage() {
-    const [searchTerm, setSearchTerm] = useState("");
-    const [category, setCategory] = useState("Semua");
+    // Kata kunci pencarian kini dimiliki bersama dengan kotak pencarian di
+    // app bar (lihat reseller-header), jadi diambil dari context.
+    const { searchTerm, setSearchTerm, category, setCategory } = useResellerFilters();
     const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
 
     return (
@@ -19,6 +21,7 @@ export default function CatalogPage() {
                 initialCategory={category}
                 viewMode={viewMode}
                 onViewChange={setViewMode}
+                showSearch={false}
             />
             <ProductGrid searchTerm={searchTerm} category={category} viewMode={viewMode} />
         </div>

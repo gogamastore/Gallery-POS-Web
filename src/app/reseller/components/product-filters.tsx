@@ -22,9 +22,11 @@ interface ProductFiltersProps {
     initialCategory?: string;
     viewMode?: "grid" | "list";
     onViewChange?: (mode: "grid" | "list") => void;
+    /** Set false bila kotak pencarian sudah disediakan di app bar. */
+    showSearch?: boolean;
 }
 
-export default function ProductFilters({ onSearchChange, onCategoryChange, initialSearchTerm = "", initialCategory = "Semua", viewMode = "grid", onViewChange }: ProductFiltersProps) {
+export default function ProductFilters({ onSearchChange, onCategoryChange, initialSearchTerm = "", initialCategory = "Semua", viewMode = "grid", onViewChange, showSearch = true }: ProductFiltersProps) {
     const [categories, setCategories] = useState<ProductCategory[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -62,22 +64,15 @@ export default function ProductFilters({ onSearchChange, onCategoryChange, initi
         fetchCategories();
     }, []);
     
-    const handleReset = () => {
-        setLocalSearch("");
-        setLocalCategory("Semua");
-        onSearchChange("");
-        onCategoryChange("Semua");
-    };
-    
     if (!isMounted) {
         return (
             <section className="w-full py-6">
-                <div className="container max-w-screen-2xl">
+                <div className="container max-w-screen-2xl px-3 sm:px-4">
                     <div className="flex flex-col md:flex-row gap-4 justify-center">
-                         <Skeleton className="h-10 w-full md:max-w-lg" />
+                         {showSearch && <Skeleton className="h-10 w-full md:max-w-lg" />}
                          <div className="w-full md:w-auto flex gap-2">
                              <Skeleton className="h-10 flex-1" />
-                             <Skeleton className="h-10 w-[70px]" />
+                             {onViewChange && <Skeleton className="h-10 w-[82px]" />}
                          </div>
                     </div>
                 </div>
@@ -88,10 +83,10 @@ export default function ProductFilters({ onSearchChange, onCategoryChange, initi
 
     return (
         <section className="w-full py-6">
-            <div className="container max-w-screen-2xl">
+            <div className="container max-w-screen-2xl px-3 sm:px-4">
                 <div className="flex flex-col md:flex-row gap-4 justify-center">
-                    <div className="flex w-full items-center gap-2 md:max-w-lg">
-                        <div className="relative flex-1">
+                    {showSearch && (
+                        <div className="relative w-full md:max-w-lg">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                             <Input
                                 placeholder="Cari produk berdasarkan nama atau SKU..."
@@ -103,31 +98,7 @@ export default function ProductFilters({ onSearchChange, onCategoryChange, initi
                                 }}
                             />
                         </div>
-                        {onViewChange && (
-                            <div className="flex shrink-0 items-center rounded-md border">
-                                <Button
-                                    type="button"
-                                    variant={viewMode === "grid" ? "default" : "ghost"}
-                                    size="icon"
-                                    className="h-9 w-9 rounded-r-none"
-                                    onClick={() => onViewChange("grid")}
-                                    aria-label="Tampilan grid"
-                                >
-                                    <LayoutGrid className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                    type="button"
-                                    variant={viewMode === "list" ? "default" : "ghost"}
-                                    size="icon"
-                                    className="h-9 w-9 rounded-l-none"
-                                    onClick={() => onViewChange("list")}
-                                    aria-label="Tampilan daftar"
-                                >
-                                    <List className="h-4 w-4" />
-                                </Button>
-                            </div>
-                        )}
-                    </div>
+                    )}
                     <div className="w-full md:w-auto flex gap-2">
                         <Select
                             onValueChange={(value) => {
@@ -150,7 +121,31 @@ export default function ProductFilters({ onSearchChange, onCategoryChange, initi
                                 )}
                             </SelectContent>
                         </Select>
-                         <Button onClick={handleReset} variant="outline">Reset</Button>
+                        {/* Menempati posisi bekas tombol Reset, di samping pilihan kategori. */}
+                        {onViewChange && (
+                            <div className="flex shrink-0 items-center rounded-md border">
+                                <Button
+                                    type="button"
+                                    variant={viewMode === "grid" ? "default" : "ghost"}
+                                    size="icon"
+                                    className="h-full w-10 rounded-r-none"
+                                    onClick={() => onViewChange("grid")}
+                                    aria-label="Tampilan grid"
+                                >
+                                    <LayoutGrid className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant={viewMode === "list" ? "default" : "ghost"}
+                                    size="icon"
+                                    className="h-full w-10 rounded-l-none"
+                                    onClick={() => onViewChange("list")}
+                                    aria-label="Tampilan daftar"
+                                >
+                                    <List className="h-4 w-4" />
+                                </Button>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>

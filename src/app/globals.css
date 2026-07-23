@@ -60,6 +60,35 @@
     --input: 217.2 32.6% 17.5%;
     --ring: 212.7 26.8% 83.9%;
   }
+
+  /* ── Tema storefront (Beranda & Katalog Produk) ────────────────────
+     Selalu light/putih dengan warna merek #d80073. Ditempelkan sebagai
+     class `storefront` pada <html> + shell reseller, jadi dashboard
+     admin tidak ikut berubah. Ditulis setelah .dark agar tetap menang
+     saat pengguna memakai mode gelap. */
+  html.storefront,
+  .storefront {
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 328 100% 42%; /* #d80073 */
+    --primary-foreground: 0 0% 100%;
+    --primary-active: 330 89% 68%; /* #f664ad */
+    --secondary: 330 60% 96%;
+    --secondary-foreground: 328 65% 28%;
+    --muted: 210 20% 96%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 330 85% 96%;
+    --accent-foreground: 328 100% 35%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 20% 91%;
+    --input: 214 20% 91%;
+    --ring: 328 100% 42%;
+  }
 }
 
 @layer base {
@@ -68,5 +97,17 @@
   }
   body {
     @apply bg-background text-foreground font-body antialiased;
+  }
+}
+
+@layer components {
+  /* Umpan balik sentuh: semua tombol storefront jadi #f664ad selama
+     ditekan. Menargetkan [data-slot="button"] agar juga kena saat
+     <Button asChild> dirender sebagai <a>. */
+  .storefront [data-slot="button"]:active:not(:disabled),
+  .storefront [data-slot="button"]:active:not([data-disabled]) {
+    background-color: hsl(var(--primary-active));
+    border-color: hsl(var(--primary-active));
+    color: hsl(var(--primary-foreground));
   }
 }

@@ -128,7 +128,7 @@ export default function FlashSaleSection() {
     if (loading) {
         return (
             <section className="w-full py-6 md:py-10 bg-primary/5">
-                <div className="container max-w-screen-2xl">
+                <div className="container max-w-screen-2xl px-3 sm:px-4">
                     <div className="h-8 w-1/4 bg-muted rounded animate-pulse mb-6"></div>
                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 sm:gap-4">
                         {[...Array(5)].map((_, i) => (
@@ -154,7 +154,7 @@ export default function FlashSaleSection() {
 
     return (
         <section className="w-full py-6 md:py-10 bg-primary/5">
-            <div className="container max-w-screen-2xl">
+            <div className="container max-w-screen-2xl px-3 sm:px-4">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4">
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
                         <h2 className="text-2xl md:text-3xl font-bold font-headline text-primary">Daftar Promo</h2>

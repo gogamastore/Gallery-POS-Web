@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import ResellerHeader from "./reseller-header";
 import ResellerSidebar from "./reseller-sidebar";
 import BottomNav from "./reseller-bottom-nav";
+import StorefrontTheme from "./storefront-theme";
 import Footer from "@/components/layout/footer";
 import StoreClosedOverlay from "@/components/reseller/store-closed-overlay";
 import { useAuth } from "@/hooks/use-auth";
@@ -35,7 +36,8 @@ export default function ResellerShell({ children }: { children: React.ReactNode 
   }, [user, router]);
 
   return (
-    <div className="relative flex min-h-dvh flex-col bg-background">
+    <div className="storefront relative flex min-h-dvh flex-col bg-background text-foreground">
+      <StorefrontTheme />
       <ResellerHeader onToggleSidebar={() => setSidebarOpen((o) => !o)} />
       <div className="flex flex-1">
         <ResellerSidebar open={sidebarOpen} />

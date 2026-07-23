@@ -171,8 +171,7 @@ export default function ProductGrid({ searchTerm, category, viewMode = "grid" }:
 
     return (
         <section className="w-full py-6 md:py-10">
-            <div className="container max-w-screen-2xl">
-                <h2 className="text-2xl font-bold font-headline mb-6 text-center">Semua Produk</h2>
+            <div className="container max-w-screen-2xl px-3 sm:px-4">
                 {loading ? (
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 sm:gap-4">
                         {[...Array(10)].map((_, i) => (

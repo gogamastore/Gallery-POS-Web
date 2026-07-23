@@ -58,7 +58,7 @@ export default function HeroSection() {
   if (loading) {
     return (
        <section className="w-full pt-6 md:pt-10">
-         <div className="container max-w-screen-2xl">
+         <div className="container max-w-screen-2xl px-3 sm:px-4">
             <div className="bg-muted aspect-[2/1] md:h-[500px] w-full animate-pulse rounded-lg"></div>
          </div>
        </section>
@@ -71,7 +71,7 @@ export default function HeroSection() {
 
   return (
     <section className="w-full pt-6 md:pt-10">
-      <div className="container max-w-screen-2xl">
+      <div className="container max-w-screen-2xl px-3 sm:px-4">
         <Carousel 
             className="w-full" 
             opts={{ loop: true }}
@@ -92,9 +92,15 @@ export default function HeroSection() {
                             src={banner.imageUrl}
                             alt={banner.title}
                             fill
-                            className="object-cover brightness-75"
+                            className="object-cover"
                             priority={index === 0}
                         />
+                        {/* Shade seperti contoh desain: gelap di sisi kiri tempat
+                            teks berada lalu memudar ke kanan, ditambah sapuan
+                            gelap tipis dari bawah. Menggantikan brightness-75
+                            yang sebelumnya menggelapkan seluruh gambar rata. */}
+                        <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-black/80 via-black/45 to-transparent" />
+                        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-transparent" />
                         <div className="absolute inset-0 flex flex-col items-start justify-center p-6 md:p-16 text-white space-y-2 md:space-y-4">
                             <h2 className="text-2xl md:text-5xl font-bold font-headline leading-tight">
                                 {banner.title}
