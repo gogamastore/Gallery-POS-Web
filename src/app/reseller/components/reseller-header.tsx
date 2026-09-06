@@ -28,8 +28,7 @@ import { cn } from "@/lib/utils"
 function Logo() {
   return (
     <Link href="/reseller" className="flex items-center gap-2 font-semibold font-headline text-lg">
-      <Image src="https://firebasestorage.googleapis.com/v0/b/gallerypos.firebasestorage.app/o/Manafidh%20Logo.png?alt=media&token=4472e2c9-c319-4222-85e8-708dbf36e7be" alt="Gogama Store Logo" width={28} height={28} />
-      Manafidh Store
+      <Image src="https://firebasestorage.googleapis.com/v0/b/gallerypos.firebasestorage.app/o/manaf%20hp1.png?alt=media&token=2e3a963c-306d-4ffe-9d55-bc6410ee6a59" alt="Gogama Store Logo" width={75} height={30} />
     </Link>
   );
 }

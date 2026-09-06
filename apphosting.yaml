@@ -25,6 +25,10 @@ env:
     value: "1:889047904404:web:e681227fb498239fa5c481"
   - variable: NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID
     value: G-SYMNEX7VYL
+  # ── MIDTRANS: MODE SANDBOX (sementara — untuk verifikasi bisnis) ──
+  # Kembalikan ke PRODUKSI setelah selesai:
+  #   NEXT_PUBLIC_MIDTRANS_CLIENT_KEY: Mid-client-CZPmZ0nFggZaf_oi
+  #   NEXT_PUBLIC_MIDTRANS_IS_PRODUCTION: "true"
   - variable: NEXT_PUBLIC_MIDTRANS_CLIENT_KEY
     value: Mid-client-CZPmZ0nFggZaf_oi
   - variable: NEXT_PUBLIC_MIDTRANS_IS_PRODUCTION

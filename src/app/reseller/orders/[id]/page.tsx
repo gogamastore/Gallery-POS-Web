@@ -82,6 +82,10 @@ function fromFirestore(docId: string, data: Record<string, any>): Order {
     total: toNum(data.total),
     subtotal: toNum(data.subtotal),
     shippingFee: toNum(data.shippingFee),
+    voucherCode: data.voucherCode ?? null,
+    voucherDiscount: toNum(data.voucherDiscount),
+    adminFee: toNum(data.adminFee),
+    serviceFee: toNum(data.serviceFee),
     shippingMethod: data.shippingMethod ?? "",
     date: data.date,
     products: (data.products ?? []).map((p: any) => ({
@@ -546,6 +550,24 @@ export default function OrderDetailPage() {
             <span className="text-muted-foreground">Ongkos Kirim</span>
             <span>{formatCurrency(shippingFee)}</span>
           </div>
+          {(order.voucherDiscount ?? 0) > 0 && (
+            <div className="flex justify-between text-sm text-green-600">
+              <span>Voucher{order.voucherCode ? ` (${order.voucherCode})` : ""}</span>
+              <span>- {formatCurrency(order.voucherDiscount || 0)}</span>
+            </div>
+          )}
+          {(order.adminFee ?? 0) > 0 && (
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Biaya Admin</span>
+              <span>{formatCurrency(order.adminFee || 0)}</span>
+            </div>
+          )}
+          {(order.serviceFee ?? 0) > 0 && (
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Biaya Layanan</span>
+              <span>{formatCurrency(order.serviceFee || 0)}</span>
+            </div>
+          )}
           <Separator />
           <div className="flex justify-between font-bold text-base">
             <span>Total</span>

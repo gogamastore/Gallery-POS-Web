@@ -5,6 +5,7 @@ import "./../globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { CartProvider } from "@/hooks/use-cart";
 import ResellerShell from "./components/reseller-shell";
+import PopupNotification from "./components/popup-notification";
 import { FilterProvider } from "@/components/providers/reseller-filter-provider";
 
 export const metadata: Metadata = {
@@ -26,19 +27,20 @@ export default function ResellerLayout({
     ? 'https://app.midtrans.com/snap/snap.js'
     : 'https://app.sandbox.midtrans.com/snap/snap.js';
 
-  return (
-    <CartProvider>
-      <FilterProvider>
-        <ResellerShell>{children}</ResellerShell>
-        <Toaster />
-        {midtransClientKey && (
-          <Script
-            src={snapUrl}
-            data-client-key={midtransClientKey}
-            strategy="lazyOnload"
-          />
-        )}
-      </FilterProvider>
-    </CartProvider>
-  );
+    return (
+      <CartProvider>
+        <FilterProvider>
+          <ResellerShell>{children}</ResellerShell>
+          <PopupNotification />
+          <Toaster />
+          {midtransClientKey && (
+            <Script
+              src={snapUrl}
+              data-client-key={midtransClientKey}
+              strategy="lazyOnload"
+            />
+          )}
+        </FilterProvider>
+      </CartProvider>
+    );
 }

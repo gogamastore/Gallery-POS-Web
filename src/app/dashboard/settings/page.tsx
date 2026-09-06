@@ -18,6 +18,9 @@ import {
   LayoutGrid,
   MapPin,
   Power,
+  Bell,
+  Ticket,
+  Receipt,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -93,6 +96,24 @@ const settingsCards = [
     description: "Atur produk yang akan ditampilkan sebagai produk terlaris.",
     icon: TrendingUp,
     href: "/dashboard/settings/trending-products",
+  },
+  {
+    title: "Notifikasi",
+    description: "Pesan/iklan yang muncul di halaman reseller saat pertama membuka aplikasi.",
+    icon: Bell,
+    href: "/dashboard/settings/notification-popup",
+  },
+  {
+    title: "Voucher Diskon",
+    description: "Kelola voucher belanja yang muncul di halaman checkout reseller.",
+    icon: Ticket,
+    href: "/dashboard/settings/vouchers",
+  },
+  {
+    title: "Biaya Admin",
+    description: "Atur biaya admin (flat) & biaya layanan (persen + batas) di checkout.",
+    icon: Receipt,
+    href: "/dashboard/settings/admin-fees",
   },
 ];
 

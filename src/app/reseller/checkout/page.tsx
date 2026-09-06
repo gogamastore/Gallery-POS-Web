@@ -25,6 +25,7 @@ import {
   doc,
   getDoc,
   query,
+  where,
   writeBatch,
   increment,
 } from "firebase/firestore";
@@ -44,6 +45,8 @@ import {
   MapPin,
   Truck,
   X,
+  Ticket,
+  ChevronRight,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -55,6 +58,13 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 declare global {
   interface Window {
@@ -83,6 +93,37 @@ const formatWeight = (gram: number) =>
   gram >= 1000 ? `${(gram / 1000).toLocaleString("id-ID", { maximumFractionDigits: 2 })} kg` : `${gram} gr`;
 
 // ── Types ──────────────────────────────────────────────────────────
+
+interface VoucherItem {
+  id: string;
+  code: string;
+  description?: string;
+  discountType: "fixed" | "percentage";
+  discountValue: number;
+  maxDiscount?: number;
+  minPurchase?: number;
+  startDate?: any;
+  endDate?: any;
+  dailyLimitPerUser?: number;
+}
+
+// Voucher masih dalam masa berlaku (tanggal)?
+const isVoucherDateValid = (v: VoucherItem): boolean => {
+  const now = Date.now();
+  const start = v.startDate?.toDate
+    ? v.startDate.toDate().getTime()
+    : v.startDate
+    ? new Date(v.startDate).getTime()
+    : null;
+  const end = v.endDate?.toDate
+    ? v.endDate.toDate().getTime()
+    : v.endDate
+    ? new Date(v.endDate).getTime()
+    : null;
+  if (start && now < start) return false;
+  if (end && now > end) return false;
+  return true;
+};
 
 interface BiteshipArea {
   id: string;
@@ -201,6 +242,21 @@ export default function CheckoutPage() {
   // ── Payment ───────────────────────────────────────────────────────
   const [paymentMethod, setPaymentMethod] = useState<"midtrans" | "cod">("midtrans");
 
+  // ── Voucher ───────────────────────────────────────────────────────
+  const [vouchers, setVouchers] = useState<VoucherItem[]>([]);
+  const [selectedVoucher, setSelectedVoucher] = useState<VoucherItem | null>(null);
+  const [voucherOpen, setVoucherOpen] = useState(false);
+  // Berapa kali user memakai tiap kode voucher dalam 24 jam terakhir.
+  const [voucherUsage, setVoucherUsage] = useState<Record<string, number>>({});
+
+  // ── Biaya Admin & Layanan ─────────────────────────────────────────
+  const [adminFeeConfig, setAdminFeeConfig] = useState<{
+    enabled: boolean;
+    adminFee: number;
+    serviceFeePercent: number;
+    serviceFeeMax: number;
+  } | null>(null);
+
   // ── Processing ────────────────────────────────────────────────────
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -210,7 +266,134 @@ export default function CheckoutPage() {
     return selectedRate?.price ?? 0;
   }, [deliveryType, selectedRate]);
 
-  const grandTotal = useMemo(() => totalAmount + shippingFee, [totalAmount, shippingFee]);
+  // Potongan dari voucher terpilih (dihitung dari subtotal produk).
+  const voucherDiscount = useMemo(() => {
+    if (!selectedVoucher) return 0;
+    if (totalAmount < (selectedVoucher.minPurchase || 0)) return 0;
+    let d = 0;
+    if (selectedVoucher.discountType === "percentage") {
+      d = Math.round((totalAmount * selectedVoucher.discountValue) / 100);
+      if (selectedVoucher.maxDiscount && selectedVoucher.maxDiscount > 0) {
+        d = Math.min(d, selectedVoucher.maxDiscount);
+      }
+    } else {
+      d = selectedVoucher.discountValue;
+    }
+    return Math.min(d, totalAmount);
+  }, [selectedVoucher, totalAmount]);
+
+  // Biaya admin (flat) — hanya jika config aktif.
+  const adminFee = useMemo(
+    () => (adminFeeConfig?.enabled ? adminFeeConfig.adminFee : 0),
+    [adminFeeConfig]
+  );
+
+  // Biaya layanan (persen dari subtotal, dibatasi maks bila diatur).
+  const serviceFee = useMemo(() => {
+    if (!adminFeeConfig?.enabled || adminFeeConfig.serviceFeePercent <= 0) return 0;
+    let f = Math.round((totalAmount * adminFeeConfig.serviceFeePercent) / 100);
+    if (adminFeeConfig.serviceFeeMax > 0) f = Math.min(f, adminFeeConfig.serviceFeeMax);
+    return f;
+  }, [adminFeeConfig, totalAmount]);
+
+  const grandTotal = useMemo(
+    () => Math.max(0, totalAmount + shippingFee - voucherDiscount + adminFee + serviceFee),
+    [totalAmount, shippingFee, voucherDiscount, adminFee, serviceFee]
+  );
+
+  // Muat konfigurasi biaya admin & layanan.
+  useEffect(() => {
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, "settings", "admin_fees"));
+        if (snap.exists()) {
+          const d = snap.data();
+          setAdminFeeConfig({
+            enabled: d.enabled !== false,
+            adminFee: Number(d.adminFee) || 0,
+            serviceFeePercent: Number(d.serviceFeePercent) || 0,
+            serviceFeeMax: Number(d.serviceFeeMax) || 0,
+          });
+        }
+      } catch {
+        // diamkan — biaya opsional
+      }
+    })();
+  }, []);
+
+  // Muat voucher AKTIF untuk dipilih di checkout.
+  useEffect(() => {
+    (async () => {
+      try {
+        const snap = await getDocs(collection(db, "vouchers"));
+        const list = snap.docs
+          .map((d) => ({ id: d.id, ...(d.data() as any) }))
+          .filter((v) => v.isActive === true && v.code)
+          .map(
+            (v) =>
+              ({
+                id: v.id,
+                code: v.code,
+                description: v.description,
+                discountType: v.discountType === "percentage" ? "percentage" : "fixed",
+                discountValue: Number(v.discountValue) || 0,
+                maxDiscount: Number(v.maxDiscount) || 0,
+                minPurchase: Number(v.minPurchase) || 0,
+                startDate: v.startDate,
+                endDate: v.endDate,
+                dailyLimitPerUser: Number(v.dailyLimitPerUser) || 0,
+              } as VoucherItem)
+          );
+        setVouchers(list);
+      } catch {
+        // diamkan — voucher opsional
+      }
+    })();
+  }, []);
+
+  // Hitung pemakaian voucher user dalam 24 jam terakhir (untuk batas per hari).
+  useEffect(() => {
+    if (!user?.uid) return;
+    (async () => {
+      try {
+        const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+        const snap = await getDocs(
+          query(collection(db, "orders"), where("customerId", "==", user.uid))
+        );
+        const counts: Record<string, number> = {};
+        snap.forEach((d) => {
+          const o = d.data() as any;
+          if (!o.voucherCode) return;
+          if (String(o.status || "").toLowerCase() === "cancelled") return;
+          const created = o.createdAt?.toDate
+            ? o.createdAt.toDate()
+            : o.date?.toDate
+            ? o.date.toDate()
+            : null;
+          if (!created || created.getTime() < cutoff) return;
+          counts[o.voucherCode] = (counts[o.voucherCode] || 0) + 1;
+        });
+        setVoucherUsage(counts);
+      } catch {
+        // diamkan
+      }
+    })();
+  }, [user?.uid]);
+
+  // Voucher yang masih dalam masa berlaku (tanggal) untuk ditampilkan.
+  const availableVouchers = vouchers.filter(isVoucherDateValid);
+
+  // Kelayakan voucher = min. belanja + batas pakai per user / 24 jam.
+  const voucherStatus = (v: VoucherItem): { ok: boolean; reason?: string } => {
+    if (totalAmount < (v.minPurchase || 0)) {
+      return { ok: false, reason: "Belanja belum memenuhi minimal" };
+    }
+    const limit = v.dailyLimitPerUser || 0;
+    if (limit > 0 && (voucherUsage[v.code] || 0) >= limit) {
+      return { ok: false, reason: `Batas ${limit}×/hari sudah tercapai` };
+    }
+    return { ok: true };
+  };
 
   // Berat paket: berat asli produk × qty (fallback 200gr bila belum diatur).
   // Nilai ini dikirim ke Biteship untuk menghitung tarif sesuai berat.
@@ -495,6 +678,10 @@ export default function CheckoutPage() {
         total: grandTotal,
         shippingMethod: shippingMethodName,
         paymentMethod,
+        voucherCode: selectedVoucher?.code || null,
+        voucherDiscount,
+        adminFee,
+        serviceFee,
         paymentStatus: "Unpaid",
         status: "Pending",
         stockUpdated: true,
@@ -959,6 +1146,112 @@ export default function CheckoutPage() {
             </CardContent>
           </Card>
 
+          {/* 4. Voucher Diskon */}
+          <Card>
+            <CardHeader><CardTitle>4. Voucher Diskon</CardTitle></CardHeader>
+            <CardContent className="space-y-2">
+              <button
+                type="button"
+                onClick={() => setVoucherOpen(true)}
+                className={cn(
+                  "w-full flex items-center gap-3 p-4 rounded-lg border-2 text-left transition-colors",
+                  selectedVoucher ? "border-primary bg-primary/5" : "border-dashed hover:border-muted-foreground/40"
+                )}
+              >
+                <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                  <Ticket className="h-5 w-5 text-primary" />
+                </div>
+                {selectedVoucher ? (
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold">{selectedVoucher.code}</p>
+                    <p className="text-xs text-green-600">Hemat {formatCurrency(voucherDiscount)}</p>
+                  </div>
+                ) : (
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium">Pakai Voucher</p>
+                    <p className="text-xs text-muted-foreground">
+                      {availableVouchers.length > 0 ? "Pilih voucher yang tersedia" : "Belum ada voucher tersedia"}
+                    </p>
+                  </div>
+                )}
+                <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+              </button>
+              {selectedVoucher && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive"
+                  onClick={() => setSelectedVoucher(null)}
+                >
+                  <X className="mr-1 h-3 w-3" /> Lepas voucher
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Popup daftar voucher */}
+          <Dialog open={voucherOpen} onOpenChange={setVoucherOpen}>
+            <DialogContent className="sm:max-w-md max-h-[80vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Voucher Tersedia</DialogTitle>
+                <DialogDescription>Pilih satu voucher untuk pesanan ini.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-2">
+                {availableVouchers.length === 0 ? (
+                  <p className="py-6 text-center text-sm text-muted-foreground">
+                    Belum ada voucher yang tersedia saat ini.
+                  </p>
+                ) : (
+                  availableVouchers.map((v) => {
+                    const status = voucherStatus(v);
+                    const eligible = status.ok;
+                    const label =
+                      v.discountType === "percentage"
+                        ? `${v.discountValue}%${v.maxDiscount ? ` (maks ${formatCurrency(v.maxDiscount)})` : ""}`
+                        : formatCurrency(v.discountValue);
+                    return (
+                      <button
+                        key={v.id}
+                        type="button"
+                        disabled={!eligible}
+                        onClick={() => {
+                          setSelectedVoucher(v);
+                          setVoucherOpen(false);
+                        }}
+                        className={cn(
+                          "w-full flex items-center gap-3 p-3 rounded-lg border text-left transition-colors",
+                          eligible ? "hover:border-primary" : "opacity-60 cursor-not-allowed",
+                          selectedVoucher?.id === v.id && "border-primary bg-primary/5"
+                        )}
+                      >
+                        <div className="rounded-md bg-primary/10 p-2 text-primary shrink-0">
+                          <Ticket className="h-5 w-5" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold tracking-wide">{v.code}</p>
+                          <p className="text-xs text-muted-foreground">
+                            Potongan {label}
+                            {v.minPurchase ? ` · min. ${formatCurrency(v.minPurchase)}` : ""}
+                            {v.dailyLimitPerUser ? ` · ${v.dailyLimitPerUser}×/hari` : ""}
+                          </p>
+                          {!eligible && status.reason && (
+                            <p className="text-xs text-destructive">{status.reason}</p>
+                          )}
+                          {v.description && (
+                            <p className="text-xs text-muted-foreground">{v.description}</p>
+                          )}
+                        </div>
+                        {selectedVoucher?.id === v.id && (
+                          <CheckCircle className="h-5 w-5 text-primary shrink-0" />
+                        )}
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </DialogContent>
+          </Dialog>
+
           {/* Ringkasan Pesanan (mobile) — sama seperti aplikasi Flutter */}
           <Card className="lg:hidden">
             <CardHeader><CardTitle>Ringkasan Pesanan</CardTitle></CardHeader>
@@ -997,6 +1290,24 @@ export default function CheckoutPage() {
                     {deliveryType === "pickup" ? "Gratis" : selectedRate ? formatCurrency(shippingFee) : "Belum dipilih"}
                   </span>
                 </div>
+                {voucherDiscount > 0 && (
+                  <div className="flex justify-between text-sm text-green-600">
+                    <span>Voucher {selectedVoucher?.code}</span>
+                    <span>- {formatCurrency(voucherDiscount)}</span>
+                  </div>
+                )}
+                {adminFee > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span>Biaya Admin</span>
+                    <span>{formatCurrency(adminFee)}</span>
+                  </div>
+                )}
+                {serviceFee > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span>Biaya Layanan</span>
+                    <span>{formatCurrency(serviceFee)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between font-bold text-lg pt-2 border-t">
                   <span>Total</span>
                   <span>{formatCurrency(grandTotal)}</span>
@@ -1047,6 +1358,24 @@ export default function CheckoutPage() {
                     {deliveryType === "pickup" ? "Gratis" : selectedRate ? formatCurrency(shippingFee) : "Belum dipilih"}
                   </span>
                 </div>
+                {voucherDiscount > 0 && (
+                  <div className="flex justify-between text-sm text-green-600">
+                    <span>Voucher {selectedVoucher?.code}</span>
+                    <span>- {formatCurrency(voucherDiscount)}</span>
+                  </div>
+                )}
+                {adminFee > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span>Biaya Admin</span>
+                    <span>{formatCurrency(adminFee)}</span>
+                  </div>
+                )}
+                {serviceFee > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span>Biaya Layanan</span>
+                    <span>{formatCurrency(serviceFee)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between font-bold text-lg pt-2 border-t">
                   <span>Total</span>
                   <span>{formatCurrency(grandTotal)}</span>

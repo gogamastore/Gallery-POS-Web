@@ -44,6 +44,10 @@ export interface Order {
   total: number;
   subtotal?: number;
   shippingFee?: number;
+  voucherCode?: string | null;
+  voucherDiscount?: number;
+  adminFee?: number;
+  serviceFee?: number;
   shippingMethod?: string;
   date: any;
   products: ProductItem[];

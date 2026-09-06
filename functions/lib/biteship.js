@@ -307,7 +307,10 @@ exports.createBiteshipOrder = (0, https_1.onCall)({ region: "asia-southeast1", s
             courier_company: order.biteshipCourierCode,
             courier_type: order.biteshipServiceCode,
             courier_insurance: 0,
-            delivery_type: isInstant ? "now" : "scheduled",
+            // "now" untuk semua kurir: kurir reguler (JNE, AnterAja, dll) tidak
+            // mendukung "scheduled" tanpa delivery_date/time → error 40002007
+            // "Courier is not available for scheduled delivery".
+            delivery_type: "now",
             order_note: `Order #${orderId} dari Gogama Store`,
             metadata: { orderId },
             items: order.products.map((p) => ({
@@ -318,7 +321,7 @@ exports.createBiteshipOrder = (0, https_1.onCall)({ region: "asia-southeast1", s
                 length: 10,
                 width: 10,
                 height: 10,
-                weight: 200,
+                weight: p.weightGram && p.weightGram > 0 ? p.weightGram : 200,
                 quantity: p.quantity,
             })),
         };
@@ -378,6 +381,12 @@ exports.createBiteshipOrder = (0, https_1.onCall)({ region: "asia-southeast1", s
             biteshipCourierTrackingId: courierTrackingId,
             deliveryTrackingUrl: trackingUrl,
             status: "shipped",
+            // Waktu pesanan DIPROSES admin (klik "Proses Pesanan"). Dipakai
+            // laporan penjualan agar pesanan terhitung pada hari diproses, bukan
+            // pada tanggal pembeli membuatnya. Ditulis atomik bersama status
+            // "shipped"; guard "Cegah double booking" di atas memastikan ini
+            // hanya terset sekali (klik ulang langsung return).
+            validatedAt: firestore_1.FieldValue.serverTimestamp(),
             updatedAt: firestore_1.FieldValue.serverTimestamp(),
         });
         v2_1.logger.info(`Biteship order: ${biteshipOrder.id} | Waybill: ${waybillId} | TrackingId: ${courierTrackingId}`);

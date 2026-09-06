@@ -64,6 +64,11 @@ const createBiteshipOrderFn = httpsCallable<
 
 // ── Constants ──────────────────────────────────────────────────────
 
+// Logo toko untuk label resi. Pakai URL Firebase Storage agar tampil di
+// jendela cetak tanpa perlu deploy file ke public/ (img lintas-origin OK).
+const STORE_LOGO_URL =
+  "https://firebasestorage.googleapis.com/v0/b/gallerypos.firebasestorage.app/o/manafidh%20ico.png?alt=media&token=bb8ac92d-350d-47e4-8a1d-bbf71679fb6e";
+
 const INSTANT_COURIER_CODES = [
   "gojek", "grab", "grab_express", "gosend", "paxel", "lalamove", "borzo",
 ];
@@ -71,6 +76,30 @@ const INSTANT_COURIER_CODES = [
 function isInstantCourier(code?: string) {
   return INSTANT_COURIER_CODES.includes((code ?? "").toLowerCase());
 }
+
+// Daftar kurir untuk filter Kelola Pengiriman
+const INSTANT_COURIERS: { code: string; name: string }[] = [
+  { code: "gojek", name: "Gojek" },
+  { code: "grab", name: "Grab" },
+  { code: "gosend", name: "GoSend" },
+  { code: "paxel", name: "Paxel" },
+  { code: "lalamove", name: "Lalamove" },
+  { code: "borzo", name: "Borzo" },
+];
+
+const REGULER_COURIERS: { code: string; name: string }[] = [
+  { code: "jne", name: "JNE" },
+  { code: "jnt", name: "J&T Express" },
+  { code: "sicepat", name: "SiCepat" },
+  { code: "anteraja", name: "AnterAja" },
+  { code: "ide", name: "ID Express" },
+  { code: "ninja", name: "Ninja Xpress" },
+  { code: "pos", name: "POS Indonesia" },
+  { code: "tiki", name: "TIKI" },
+  { code: "sap", name: "SAP Express" },
+  { code: "wahana", name: "Wahana" },
+  { code: "lion", name: "Lion Parcel" },
+];
 
 // ── Badges ─────────────────────────────────────────────────────────
 
@@ -157,6 +186,7 @@ interface Order {
   deliveryTrackingUrl?: string;
   destinationAreaId?: string;
   deliveryNotes?: string;
+  labelPrinted?: boolean;
   // Midtrans
   midtransToken?: string;
   midtransRedirectUrl?: string;
@@ -212,6 +242,8 @@ function fromFirestore(id: string, data: Record<string, any>): Order {
       sku: p.sku ?? "",
     })),
     biteshipOrderId: data.biteshipOrderId,
+    biteshipCourierTrackingId: data.biteshipCourierTrackingId,
+    biteshipCourierRoutingCode: data.biteshipCourierRoutingCode,
     biteshipCourierCode: data.biteshipCourierCode,
     biteshipCourierName: data.biteshipCourierName,
     biteshipServiceCode: data.biteshipServiceCode,
@@ -221,6 +253,7 @@ function fromFirestore(id: string, data: Record<string, any>): Order {
     deliveryTrackingUrl: data.deliveryTrackingUrl,
     destinationAreaId: data.destinationAreaId,
     deliveryNotes: data.deliveryNotes,
+    labelPrinted: data.labelPrinted === true,
     midtransToken: data.midtransToken,
     midtransRedirectUrl: data.midtransRedirectUrl,
   };
@@ -250,12 +283,12 @@ function printWaybill(
   const totalQty     = order.products.reduce((s, p) => s + p.quantity, 0);
   const totalWeight  = (order.products.reduce((s, p) => s + p.quantity * 200, 0) / 1000).toFixed(1);
   const itemsList    = order.products.map(p => p.quantity + "x " + p.name).join("<br>");
-  const catatan      = order.deliveryNotes || "Order #" + order.id + " dari Gogama Store";
-  const logoUrl      = window.location.origin + "/gogamalogo.png";
+  const catatan      = order.deliveryNotes || "Order #" + order.id + " dari Manafidh Store";
+  const logoUrl      = STORE_LOGO_URL;
   const bcWaybill    = waybillId ? "JsBarcode('#bcW','"+waybillId+"',{format:'CODE128',width:2,height:60,displayValue:false,margin:4});" : "";
   const bcRef        = refId    ? "JsBarcode('#bcR','"+refId+"',{format:'CODE128',width:1.2,height:35,displayValue:false,margin:2});" : "";
 
-  const storeName = storeInfo?.name    ?? "Gogama Store";
+  const storeName = storeInfo?.name    ?? "Manafidh Store";
   const storePhone = storeInfo?.phone  ?? "";
   const storeAddr  = storeInfo?.address ?? "";
 
@@ -292,7 +325,7 @@ body{font-family:Arial,sans-serif;font-size:11px;width:105mm;padding:3mm}
 </style></head><body>
 
 <div class="hdr">
-  <img src="${logoUrl}" class="logo" alt="Gogama" onerror="this.style.display='none'">
+  <img src="${logoUrl}" class="logo" alt="Manafidh Store" onerror="this.style.display='none'">
   <div class="courier">${courierLabel || "-"}</div>
 </div>
 
@@ -339,13 +372,146 @@ body{font-family:Arial,sans-serif;font-size:11px;width:105mm;padding:3mm}
 </div>
 
 <div class="ftr">
-  ${trackingUrl ? "<a href=\"" + trackingUrl + "\">" + trackingUrl + "</a>" : "<p>Gogama Store</p>"}
+  ${trackingUrl ? "<a href=\"" + trackingUrl + "\">" + trackingUrl + "</a>" : "<p>Manafidh Store</p>"}
 </div>
 
 <button class="pbtn" onclick="window.print()">🖨️ Cetak / Print</button>
 
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"><\/script>
 <script>window.addEventListener('load',function(){try{${bcWaybill}${bcRef}}catch(e){}});<\/script>
+</body></html>`);
+  w.document.close();
+}
+
+// ── Cetak Massal: banyak label resi dalam 1 halaman (A6, page-break) ──
+function printWaybillsBulk(orders: Order[], storeInfo?: StoreInfo) {
+  if (orders.length === 0) return;
+  const w = window.open("", "_blank", "width=560,height=800");
+  if (!w) return;
+
+  const storeName = storeInfo?.name ?? "Manafidh Store";
+  const storePhone = storeInfo?.phone ?? "";
+  const storeAddr = storeInfo?.address ?? "";
+  const logoUrl = STORE_LOGO_URL;
+
+  const bcCalls: string[] = [];
+  const labels = orders
+    .map((order, idx) => {
+      const waybillId = order.waybillId ?? "";
+      const trackingId = order.biteshipCourierTrackingId ?? "";
+      const trackingUrl = trackingId
+        ? `https://track.biteship.com/${trackingId}`
+        : order.deliveryTrackingUrl ?? "";
+      const refId = order.biteshipOrderId ?? order.id;
+      const courierLabel = [
+        order.biteshipCourierName ?? order.biteshipCourierCode,
+        order.biteshipServiceName ?? order.biteshipServiceCode,
+      ].filter(Boolean).join(" ");
+      const serviceName = order.biteshipServiceName ?? order.biteshipServiceCode ?? "-";
+      const routingCode = order.biteshipCourierRoutingCode ?? "";
+      const shippingFee = order.shippingFee
+        ? new Intl.NumberFormat("id-ID").format(order.shippingFee)
+        : "-";
+      const totalQty = order.products.reduce((s, p) => s + p.quantity, 0);
+      const totalWeight = (
+        order.products.reduce((s, p) => s + p.quantity * 200, 0) / 1000
+      ).toFixed(1);
+      const itemsList = order.products.map((p) => p.quantity + "x " + p.name).join("<br>");
+      const catatan = order.deliveryNotes || "Order #" + order.id + " dari " + storeName;
+      if (waybillId) {
+        bcCalls.push(
+          `JsBarcode('#bcW${idx}','${waybillId}',{format:'CODE128',width:2,height:60,displayValue:false,margin:4});`
+        );
+      }
+      bcCalls.push(
+        `JsBarcode('#bcR${idx}','${refId}',{format:'CODE128',width:1.2,height:35,displayValue:false,margin:2});`
+      );
+      return `<div class="label">
+  <div class="hdr">
+    <img src="${logoUrl}" class="logo" alt="Manafidh Store" onerror="this.style.display='none'">
+    <div class="courier">${courierLabel || "-"}</div>
+  </div>
+  <div class="bc">
+    <svg id="bcW${idx}"></svg>
+    <p class="resi-lbl">Nomor Resi - ${waybillId || "-"}</p>
+  </div>
+  <div class="svc">
+    <p>Ongkos Kirim: Rp. ${shippingFee}</p>
+    <p>Jenis Layanan - ${serviceName}${routingCode ? ". Kode Rute - " + routingCode : ""}</p>
+  </div>
+  <div class="ref-row">
+    <div class="ref-l">
+      <p class="lbl">Reference Number</p>
+      <svg id="bcR${idx}"></svg>
+      <p class="val">${refId}</p>
+    </div>
+    <div class="ref-r">
+      <p class="lbl">Quantity: &nbsp;${totalQty} Pcs</p><br>
+      <p class="lbl">Weight: &nbsp;&nbsp;${totalWeight} Kg</p>
+    </div>
+  </div>
+  <div class="addr-row">
+    <div class="addr">
+      <p class="lbl">Alamat Penerima:</p>
+      <p class="anm">${order.customerDetails?.name ?? order.customer}</p>
+      <p class="aln">${order.customerDetails?.whatsapp ?? order.customerDetails?.phone ?? "-"}</p>
+      <p class="aln">${order.customerDetails?.address ?? "-"}</p>
+    </div>
+    <div class="addr">
+      <p class="lbl">Alamat Pengirim:</p>
+      <p class="anm">${storeName}</p>
+      <p class="aln">${storePhone}</p>
+      <p class="aln">${storeAddr}</p>
+    </div>
+  </div>
+  <div class="items">
+    <div class="ir"><span class="ik">Jenis Barang :</span><span>${itemsList}</span></div>
+    <div class="ir"><span class="ik">Catatan :</span><span>${catatan}</span></div>
+  </div>
+  <div class="ftr">
+    ${trackingUrl ? '<a href="' + trackingUrl + '">' + trackingUrl + "</a>" : "<p>" + storeName + "</p>"}
+  </div>
+</div>`;
+    })
+    .join("");
+
+  w.document.write(`<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8">
+<title>Cetak Label (${orders.length})</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;font-size:11px}
+.label{width:105mm;padding:3mm;page-break-after:always}
+.label:last-of-type{page-break-after:auto}
+.hdr{border:2px solid #000;padding:7px 10px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.logo{height:48px;object-fit:contain;max-width:55mm}
+.courier{text-align:right;font-weight:bold;font-size:11px;color:#333;word-break:break-word;max-width:40mm}
+.bc{border:1px solid #000;border-top:none;padding:7px 8px;text-align:center}
+.bc svg{width:100%;height:65px}
+.resi-lbl{font-size:13px;font-weight:bold;margin-top:3px}
+.svc{border:1px solid #000;border-top:none;padding:5px 9px;text-align:center;font-size:10px;line-height:1.5}
+.ref-row{border:1px solid #000;border-top:none;display:flex}
+.ref-l{flex:1;padding:5px 7px;border-right:1px solid #000}
+.ref-l svg{width:100%;height:38px}
+.ref-r{width:42%;padding:5px 7px}
+.lbl{font-weight:bold;font-size:10px;margin-bottom:2px}
+.val{font-size:10px;word-break:break-all;margin-top:2px}
+.addr-row{border:1px solid #000;border-top:none;display:flex;min-height:75px}
+.addr{flex:1;padding:5px 7px}
+.addr:first-child{border-right:1px solid #000}
+.anm{font-weight:bold;font-size:11px;margin:2px 0}
+.aln{font-size:10px;margin-top:1px;line-height:1.35}
+.items{border:1px solid #000;border-top:none;padding:5px 7px;font-size:10px;line-height:1.4}
+.ir{display:flex;gap:5px;margin-bottom:1px}
+.ik{font-weight:bold;min-width:75px;flex-shrink:0}
+.ftr{border:1px solid #000;border-top:none;padding:5px;text-align:center;font-size:10px}
+.ftr a{color:#0066cc;word-break:break-all;text-decoration:none}
+.pbtn{position:sticky;bottom:0;width:105mm;padding:9px;font-size:13px;cursor:pointer;background:#1a73e8;color:#fff;border:none;font-weight:bold}
+@media print{.pbtn{display:none}@page{size:A6;margin:3mm}}
+</style></head><body>
+${labels}
+<button class="pbtn" onclick="window.print()">🖨️ Cetak Semua (${orders.length} label)</button>
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"><\/script>
+<script>window.addEventListener('load',function(){try{${bcCalls.join("")}}catch(e){}});<\/script>
 </body></html>`);
   w.document.close();
 }
@@ -809,7 +975,13 @@ export default function OrdersPage() {
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
-  const [storeInfo, setStoreInfo] = useState<StoreInfo>({ name: "Gogama Store", phone: "", address: "" });
+  const [storeInfo, setStoreInfo] = useState<StoreInfo>({ name: "Manafidh Store", phone: "", address: "" });
+  // Kelola Pengiriman (tab "Perlu Dikirim")
+  const [shipSubTab, setShipSubTab] = useState<"update" | "print">("update");
+  const [shipMode, setShipMode] = useState<"instant" | "reguler">("reguler");
+  const [shipCourier, setShipCourier] = useState<string>("all");
+  const [printedFilter, setPrintedFilter] = useState<"all" | "printed" | "unprinted">("all");
+  const [bulkBusy, setBulkBusy] = useState(false);
   const { toast } = useToast();
 
   // ── Load store info ──────────────────────────────────────────────
@@ -819,7 +991,7 @@ export default function OrdersPage() {
       if (!snap.exists()) return;
       const d = snap.data();
       setStoreInfo({
-        name: d.storeName || "Gogama Store",
+        name: d.storeName || "Manafidh Store",
         phone: d.storePhone || "",
         address: [d.address, d.city, d.province, d.postalCode].filter(Boolean).join(", "),
       });
@@ -853,6 +1025,22 @@ export default function OrdersPage() {
     });
     return unsub;
   }, []);
+
+  // ── Radix workaround: bersihkan lock body yang tertinggal ─────────
+  // Saat membatalkan/menghapus pesanan, kartu berisi Dialog/AlertDialog
+  // ter-unmount oleh pembaruan onSnapshot tepat ketika dialog menutup.
+  // Radix bisa meninggalkan `pointer-events: none` pada <body> → halaman
+  // "freeze"/tidak bisa diklik. Bersihkan bila tak ada dialog yang terbuka.
+  useEffect(() => {
+    if (document.body.style.pointerEvents !== "none") return;
+    const t = setTimeout(() => {
+      const hasOpenOverlay = document.querySelector(
+        '[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"], [role="menu"][data-state="open"]'
+      );
+      if (!hasOpenOverlay) document.body.style.pointerEvents = "";
+    }, 120);
+    return () => clearTimeout(t);
+  }, [allOrders]);
 
   // ── PDF helpers ──────────────────────────────────────────────────
 
@@ -1035,6 +1223,99 @@ export default function OrdersPage() {
     setSelectedOrders((p) => checked ? [...new Set([...p, ...ids])] : p.filter((id) => !ids.includes(id)));
   };
 
+  // ── Kelola Pengiriman (filter + aksi massal) ──────────────────────
+  // Dipakai di tab "Perlu Dikirim" & "Dikirim" (agar resi bisa dicetak
+  // massal setelah status berubah menjadi Dikirim saat update massal).
+
+  const applyShipFilters = useCallback(
+    (source: Order[]) => {
+      // Jenis pengiriman: instan vs reguler (non-instan)
+      let list = source.filter((o) =>
+        shipMode === "instant"
+          ? isInstantCourier(o.biteshipCourierCode)
+          : !isInstantCourier(o.biteshipCourierCode)
+      );
+      // Kurir spesifik
+      if (shipCourier !== "all") {
+        list = list.filter((o) => (o.biteshipCourierCode ?? "").toLowerCase() === shipCourier);
+      }
+      // Filter status cetak (khusus tab Cetak Pengiriman)
+      if (shipSubTab === "print" && printedFilter !== "all") {
+        list = list.filter((o) => (printedFilter === "printed" ? o.labelPrinted : !o.labelPrinted));
+      }
+      return list;
+    },
+    [shipMode, shipCourier, shipSubTab, printedFilter]
+  );
+
+  const handleBulkUpdateShipping = useCallback(async () => {
+    const targets = allOrders.filter(
+      (o) =>
+        selectedOrders.includes(o.id) &&
+        !isInstantCourier(o.biteshipCourierCode) &&
+        !o.biteshipOrderId
+    );
+    if (targets.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "Tidak ada pesanan untuk diproses",
+        description: "Pilih pesanan reguler yang belum diproses (pengiriman instan diproses manual).",
+      });
+      return;
+    }
+    setBulkBusy(true);
+    let ok = 0;
+    let fail = 0;
+    for (const o of targets) {
+      try {
+        await createBiteshipOrderFn({ orderId: o.id });
+        ok++;
+      } catch {
+        fail++;
+      }
+    }
+    setBulkBusy(false);
+    toast({
+      title: "Update pengiriman selesai",
+      description: `${ok} pesanan berhasil diproses${fail ? `, ${fail} gagal` : ""}.`,
+    });
+    setSelectedOrders([]);
+  }, [allOrders, selectedOrders, toast]);
+
+  const handleBulkPrint = useCallback(async () => {
+    const targets = allOrders.filter((o) => selectedOrders.includes(o.id));
+    if (targets.length === 0) {
+      toast({ variant: "destructive", title: "Belum ada pesanan dipilih" });
+      return;
+    }
+    const missing = targets.filter(
+      (o) => !isInstantCourier(o.biteshipCourierCode) && !o.waybillId
+    );
+    if (missing.length > 0) {
+      toast({
+        variant: "destructive",
+        title: "Sebagian resi belum diupdate",
+        description: `${missing.length} pesanan reguler belum memiliki nomor resi. Update resi terlebih dahulu.`,
+      });
+      return;
+    }
+    printWaybillsBulk(targets, storeInfo);
+    // Tandai sudah dicetak
+    const batch = writeBatch(db);
+    targets.forEach((o) =>
+      batch.update(doc(db, "orders", o.id), {
+        labelPrinted: true,
+        labelPrintedAt: serverTimestamp(),
+      })
+    );
+    try {
+      await batch.commit();
+    } catch {
+      /* onSnapshot tetap menampilkan status terkini */
+    }
+    setSelectedOrders([]);
+  }, [allOrders, selectedOrders, storeInfo, toast]);
+
   // ── Main action button per tab ────────────────────────────────────
 
   function renderMainAction(order: Order, tabName: string) {
@@ -1133,23 +1414,25 @@ export default function OrdersPage() {
         ) : (
           <div className="space-y-4">
             {orders.map((order) => (
-              <Card key={order.id} className="overflow-hidden">
+              <div key={order.id} className="flex items-start gap-3">
+                {/* Checkbox di luar kartu → klik centang tidak membuka detail */}
+                <Checkbox
+                  className="mt-4 shrink-0"
+                  aria-label="Pilih pesanan"
+                  checked={selectedOrders.includes(order.id)}
+                  onCheckedChange={(c) => handleSelectOrder(order.id, !!c)}
+                />
+                <Card className="overflow-hidden flex-1 min-w-0">
                 {/* Clickable area: header + content → detail page */}
                 <div
                   className="cursor-pointer hover:bg-muted/30 transition-colors"
                   onClick={() => router.push(`/dashboard/orders/${order.id}`)}
                 >
-                {/* Header: checkbox + order ID + tanggal */}
+                {/* Header: order ID + tanggal */}
                 <CardHeader className="p-4 pb-3 flex-row items-center justify-between border-b gap-2">
-                  <div className="flex items-center gap-3">
-                    <Checkbox
-                      checked={selectedOrders.includes(order.id)}
-                      onCheckedChange={(c) => handleSelectOrder(order.id, !!c)}
-                    />
-                    <span className="text-sm font-bold">
-                      #{order.id.substring(0, 8).toUpperCase()}
-                    </span>
-                  </div>
+                  <span className="text-sm font-bold">
+                    #{order.id.substring(0, 8).toUpperCase()}
+                  </span>
                   {order.date?.toDate && (
                     <span className="text-xs text-muted-foreground" suppressHydrationWarning>
                       {format(order.date.toDate(), "dd MMM yyyy, HH:mm", { locale: dateFnsLocaleId })}
@@ -1218,6 +1501,11 @@ export default function OrdersPage() {
                     <p className="text-xs font-mono bg-muted px-2 py-1 rounded inline-flex items-center gap-1">
                       <Package className="h-3 w-3" />{order.waybillId}
                     </p>
+                  )}
+                  {order.labelPrinted && (
+                    <span className="ml-2 text-xs text-green-700 border border-green-300 bg-green-50 px-2 py-0.5 rounded inline-flex items-center gap-1">
+                      <Printer className="h-3 w-3" />Label dicetak
+                    </span>
                   )}
                   {order.biteshipOrderId && !order.waybillId && isInstantCourier(order.biteshipCourierCode) && (
                     <span className="text-xs text-orange-600 border border-orange-300 bg-orange-50 px-2 py-0.5 rounded">
@@ -1301,10 +1589,130 @@ export default function OrdersPage() {
                     </>
                   )}
                 </CardFooter>
-              </Card>
+                </Card>
+              </div>
             ))}
           </div>
         )}
+      </div>
+    );
+  }
+
+  // ── Kelola Pengiriman: sub-tab + filter + aksi massal ─────────────
+
+  function renderToShipManager(source: Order[], tabName: string) {
+    const managed = applyShipFilters(source);
+    const couriers = shipMode === "instant" ? INSTANT_COURIERS : REGULER_COURIERS;
+    const selectedInManaged = managed.filter((o) => selectedOrders.includes(o.id));
+    const printMissingResi = selectedInManaged.some(
+      (o) => !isInstantCourier(o.biteshipCourierCode) && !o.waybillId
+    );
+    const updatableTargets = selectedInManaged.filter(
+      (o) => !isInstantCourier(o.biteshipCourierCode) && !o.biteshipOrderId
+    );
+    const canBulkPrint = selectedInManaged.length > 0 && !printMissingResi;
+    const canBulkUpdate = shipMode !== "instant" && updatableTargets.length > 0;
+
+    const selectCls =
+      "h-9 rounded-md border border-input bg-background px-3 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring";
+    const subTabCls = (active: boolean) =>
+      `px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+        active ? "bg-background shadow text-foreground" : "text-muted-foreground hover:text-foreground"
+      }`;
+
+    return (
+      <div className="space-y-4">
+        {/* Sub-tab utama */}
+        <div className="inline-flex rounded-lg border p-1 bg-muted/40">
+          <button className={subTabCls(shipSubTab === "print")} onClick={() => setShipSubTab("print")}>
+            Cetak Pengiriman
+          </button>
+          <button className={subTabCls(shipSubTab === "update")} onClick={() => setShipSubTab("update")}>
+            Update Pengiriman
+          </button>
+        </div>
+
+        {/* Baris filter + aksi massal */}
+        <div className="flex flex-wrap items-end gap-3 p-3 border rounded-lg bg-muted/20">
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Jenis Pengiriman</Label>
+            <div className="flex gap-1">
+              <Button
+                size="sm"
+                variant={shipMode === "reguler" ? "default" : "outline"}
+                onClick={() => { setShipMode("reguler"); setShipCourier("all"); }}
+              >
+                Reguler
+              </Button>
+              <Button
+                size="sm"
+                variant={shipMode === "instant" ? "default" : "outline"}
+                onClick={() => { setShipMode("instant"); setShipCourier("all"); }}
+              >
+                Instan
+              </Button>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Kurir</Label>
+            <select className={selectCls} value={shipCourier} onChange={(e) => setShipCourier(e.target.value)}>
+              <option value="all">Semua Kurir</option>
+              {couriers.map((c) => (
+                <option key={c.code} value={c.code}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {shipSubTab === "print" && (
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Status Cetak</Label>
+              <select
+                className={selectCls}
+                value={printedFilter}
+                onChange={(e) => setPrintedFilter(e.target.value as "all" | "printed" | "unprinted")}
+              >
+                <option value="all">Semua</option>
+                <option value="unprinted">Belum Dicetak</option>
+                <option value="printed">Sudah Dicetak</option>
+              </select>
+            </div>
+          )}
+
+          <div className="ml-auto">
+            {shipSubTab === "update" ? (
+              <Button onClick={handleBulkUpdateShipping} disabled={!canBulkUpdate || bulkBusy}>
+                {bulkBusy ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Truck className="mr-2 h-4 w-4" />
+                )}
+                Update Pengiriman Massal ({updatableTargets.length})
+              </Button>
+            ) : (
+              <Button onClick={handleBulkPrint} disabled={!canBulkPrint}>
+                <Printer className="mr-2 h-4 w-4" />
+                Cetak Massal ({selectedInManaged.length})
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {/* Catatan / peringatan kontekstual */}
+        {shipSubTab === "update" && shipMode === "instant" && (
+          <p className="text-xs text-orange-600 flex items-center gap-1.5 px-1">
+            <AlertCircle className="h-3.5 w-3.5" />
+            Pengiriman instan tidak dapat diproses massal — proses manual pada masing-masing pesanan.
+          </p>
+        )}
+        {shipSubTab === "print" && printMissingResi && (
+          <p className="text-xs text-orange-600 flex items-center gap-1.5 px-1">
+            <AlertCircle className="h-3.5 w-3.5" />
+            Sebagian pesanan reguler yang dipilih belum memiliki nomor resi. Update resi terlebih dahulu sebelum mencetak.
+          </p>
+        )}
+
+        {renderOrderList(managed, tabName)}
       </div>
     );
   }
@@ -1389,10 +1797,10 @@ export default function OrdersPage() {
             {renderOrderList(filteredOrders.toProcess, "toProcess")}
           </TabsContent>
           <TabsContent value="toShip" className="mt-4">
-            {renderOrderList(filteredOrders.toShip, "toShip")}
+            {renderToShipManager(filteredOrders.toShip, "toShip")}
           </TabsContent>
           <TabsContent value="shipped" className="mt-4">
-            {renderOrderList(filteredOrders.shipped, "shipped")}
+            {renderToShipManager(filteredOrders.shipped, "shipped")}
           </TabsContent>
           <TabsContent value="delivered" className="mt-4">
             {renderOrderList(filteredOrders.delivered, "delivered")}

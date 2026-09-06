@@ -97,6 +97,11 @@ interface Order {
   total: number;
   subtotal: number;
   shippingFee: number;
+  voucherCode?: string | null;
+  voucherDiscount?: number;
+  adminFee?: number;
+  serviceFee?: number;
+  labelPrinted?: boolean;
   shippingMethod?: string;
   date: any;
   shippedAt?: any;
@@ -151,6 +156,10 @@ function fromFirestore(docId: string, data: Record<string, any>): Order {
     total: toNum(data.total),
     subtotal: toNum(data.subtotal),
     shippingFee: toNum(data.shippingFee),
+    voucherCode: data.voucherCode ?? null,
+    voucherDiscount: toNum(data.voucherDiscount),
+    adminFee: toNum(data.adminFee),
+    serviceFee: toNum(data.serviceFee),
     shippingMethod: data.shippingMethod ?? "",
     date: data.date,
     shippedAt: data.shippedAt,
@@ -253,12 +262,12 @@ function printWaybill(order: Order, storeInfo?: StoreInfo) {
   const totalQty     = order.products.reduce((s, p) => s + p.quantity, 0);
   const totalWeight  = (order.products.reduce((s, p) => s + p.quantity * 200, 0) / 1000).toFixed(1);
   const itemsList    = order.products.map(p => p.quantity + "x " + p.name).join("<br>");
-  const catatan      = order.deliveryNotes || "Order #" + order.id + " dari Gogama Store";
+  const catatan      = order.deliveryNotes || "Order #" + order.id + " dari Manafidh Store";
   const logoUrl      = window.location.origin + "/gogamalogo.png";
   const bcW = waybillId ? "JsBarcode('#bcW','"+waybillId+"',{format:'CODE128',width:2,height:60,displayValue:false,margin:4});" : "";
   const bcR = refId    ? "JsBarcode('#bcR','"+refId+"',{format:'CODE128',width:1.2,height:35,displayValue:false,margin:2});" : "";
 
-  const storeName  = storeInfo?.name    ?? "Gogama Store";
+  const storeName  = storeInfo?.name    ?? "Manafidh Store";
   const storePhone = storeInfo?.phone   ?? "";
   const storeAddr  = storeInfo?.address ?? "";
 
@@ -322,7 +331,7 @@ body{font-family:Arial,sans-serif;font-size:11px;width:105mm;padding:3mm}
   <div class="ir"><span class="ik">Jenis Barang :</span><span>${itemsList}</span></div>
   <div class="ir"><span class="ik">Catatan :</span><span>${catatan}</span></div>
 </div>
-<div class="ftr">${trackingUrl ? "<a href=\""+trackingUrl+"\">"+trackingUrl+"</a>" : "<p>Gogama Store</p>"}</div>
+<div class="ftr">${trackingUrl ? "<a href=\""+trackingUrl+"\">"+trackingUrl+"</a>" : "<p>Manafidh Store</p>"}</div>
 <button class="pbtn" onclick="window.print()">🖨️ Cetak / Print</button>
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"><\/script>
 <script>window.addEventListener('load',function(){try{${bcW}${bcR}}catch(e){}});<\/script>
@@ -339,14 +348,14 @@ export default function OrderDetailPage() {
 
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
-  const [storeInfo, setStoreInfo] = useState<StoreInfo>({ name: "Gogama Store", phone: "", address: "" });
+  const [storeInfo, setStoreInfo] = useState<StoreInfo>({ name: "Manafidh Store", phone: "", address: "" });
 
   useEffect(() => {
     getDoc(doc(db, "settings", "store")).then((snap) => {
       if (!snap.exists()) return;
       const d = snap.data();
       setStoreInfo({
-        name: d.storeName || "Gogama Store",
+        name: d.storeName || "Manafidh Store",
         phone: d.storePhone || "",
         address: [d.address, d.city, d.province, d.postalCode].filter(Boolean).join(", "),
       });
@@ -903,6 +912,24 @@ export default function OrderDetailPage() {
             <span className="text-muted-foreground">Ongkos Kirim</span>
             <span>{formatCurrency(order.shippingFee)}</span>
           </div>
+          {(order.voucherDiscount ?? 0) > 0 && (
+            <div className="flex justify-between text-sm text-green-600">
+              <span>Voucher{order.voucherCode ? ` (${order.voucherCode})` : ""}</span>
+              <span>- {formatCurrency(order.voucherDiscount || 0)}</span>
+            </div>
+          )}
+          {(order.adminFee ?? 0) > 0 && (
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Biaya Admin</span>
+              <span>{formatCurrency(order.adminFee || 0)}</span>
+            </div>
+          )}
+          {(order.serviceFee ?? 0) > 0 && (
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Biaya Layanan</span>
+              <span>{formatCurrency(order.serviceFee || 0)}</span>
+            </div>
+          )}
           <Separator />
           <div className="flex justify-between font-bold text-base">
             <span>Total</span>
