@@ -54,7 +54,7 @@ export interface ProductFormData {
   name?: string;
   sku?: string;
   category?: string;
-  price?: number | string;
+  price?: number;
   purchasePrice?: number;
   stock?: number;
   weightGram?: number;
