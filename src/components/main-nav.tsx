@@ -15,6 +15,7 @@ import {
   TicketPercent,
   Percent,
   FileClock,
+  Bell,
   MapPin,
   MessageSquare,
 } from "lucide-react";
@@ -61,6 +62,12 @@ const settingsSubMenu = [
     highlight: true,
   },
   {
+    href: "/dashboard/settings/notification-popup",
+    label: "Notifikasi",
+    icon: Bell,
+    highlight: true,
+  },
+  {
     href: "/dashboard/settings/admin-fees",
     label: "Biaya Admin & Layanan",
     icon: Percent,
@@ -79,7 +86,6 @@ const settingsSubMenu = [
   { href: "/dashboard/settings/product-categories", label: "Kategori Produk" },
   { href: "/dashboard/settings/brands", label: "Manajemen Brand" },
   { href: "/dashboard/settings/promo", label: "Promo" },
-  { href: "/dashboard/settings/design", label: "Desain" },
   { href: "/dashboard/settings/trending-products", label: "Produk Trending" },
 ];
 

@@ -14,6 +14,9 @@ import { Separator } from "@/components/ui/separator";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { useToast } from "@/hooks/use-toast";
 import { useCart } from "@/hooks/use-cart";
+import { useAuth } from "@/hooks/use-auth";
+import { sendChatMessage } from "@/lib/chat";
+import { productChatMessage } from "@/lib/contact-admin";
 import {
   Loader2,
   ChevronLeft,
@@ -27,6 +30,7 @@ import {
   Tag,
   Star,
   RotateCcw,
+  MessageCircleMore,
 } from "lucide-react";
 
 interface Product {
@@ -66,10 +70,12 @@ export default function ProductDetailPage() {
   const [loading, setLoading] = useState(true);
   const [quantity, setQuantity] = useState(1);
   const [isAddingToCart, setIsAddingToCart] = useState(false);
+  const [chatBusy, setChatBusy] = useState(false);
   const router = useRouter();
   const params = useParams();
   const { toast } = useToast();
   const { addToCart, loading: cartLoading } = useCart();
+  const { user } = useAuth();
   const productId = params.productId as string;
 
   const fetchProductDetails = useCallback(async () => {
@@ -134,6 +140,41 @@ export default function ProductDetailPage() {
         // Error toast is handled in the cart hook
     } finally {
         setIsAddingToCart(false);
+    }
+  }
+
+  // Chat: kirim link produk ke obrolan aplikasi lalu buka halaman chat.
+  const handleChatAboutProduct = async () => {
+    if (!product || chatBusy) return;
+    if (!user) { router.push("/"); return; }
+    setChatBusy(true);
+    try {
+        const price = product.isPromo && product.discountPrice
+            ? Number(String(product.discountPrice).replace(/[^0-9]/g, ""))
+            : Number(String(product.price).replace(/[^0-9]/g, ""));
+        const origin = typeof window !== "undefined"
+            ? window.location.origin
+            : "https://gallerypos.web.app";
+        await sendChatMessage({
+            userId: user.uid,
+            senderId: user.uid,
+            senderRole: "user",
+            text: productChatMessage({
+                name: product.name,
+                price,
+                link: `${origin}/reseller/products/${product.id}`,
+            }),
+            userInfo: {
+                name: user.displayName || undefined,
+                email: user.email || undefined,
+                photoURL: user.photoURL || undefined,
+            },
+        });
+        router.push("/reseller/chat");
+    } catch {
+        toast({ variant: "destructive", title: "Gagal membuka obrolan" });
+    } finally {
+        setChatBusy(false);
     }
   }
 
@@ -290,6 +331,14 @@ export default function ProductDetailPage() {
                                     </Button>
                                 </div>
                             </div>
+                            <Button variant="outline" size="lg" className="h-12" onClick={handleChatAboutProduct} disabled={chatBusy}>
+                                {chatBusy ? (
+                                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                                ) : (
+                                    <MessageCircleMore className="mr-2 h-5 w-5" />
+                                )}
+                                Chat
+                            </Button>
                             <Button onClick={handleAddToCart} size="lg" className="flex-1 font-headline text-base h-12" disabled={!stockAvailable || isAddingToCart || cartLoading}>
                                 {(isAddingToCart || cartLoading) ? (
                                     <Loader2 className="mr-2 h-5 w-5 animate-spin" />
@@ -345,7 +394,11 @@ export default function ProductDetailPage() {
 
         {/* Sticky Add to Cart for Mobile */}
         <div className="md:hidden fixed bottom-16 left-0 z-40 w-full bg-background border-t shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
-            <div className="container h-20 mx-auto px-4 flex items-center justify-between gap-3">
+            <div className="container h-20 mx-auto px-4 flex items-center justify-between gap-2">
+                <Button variant="outline" className="h-12 shrink-0 px-3" onClick={handleChatAboutProduct} disabled={chatBusy} aria-label="Chat tentang produk">
+                    {chatBusy ? <Loader2 className="mr-1.5 h-5 w-5 animate-spin" /> : <MessageCircleMore className="mr-1.5 h-5 w-5" />}
+                    Chat
+                </Button>
                 <div className="flex items-center rounded-lg border">
                     <Button variant="ghost" size="icon" className="h-10 w-10 rounded-r-none" onClick={() => handleQuantityChange(quantity - 1)} disabled={!stockAvailable || quantity <= 1}>
                         <Minus className="h-4 w-4" />

@@ -4,6 +4,7 @@
 export const dynamic = "force-dynamic";
 
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -15,6 +16,7 @@ import {
   sendChatMessage,
   markThreadRead,
   uploadChatImage,
+  ensureThreadProfile,
 } from "@/lib/chat";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,6 +41,8 @@ export default function AdminChatPage() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const searchParams = useSearchParams();
+  const preselectedRef = useRef(false);
 
   // Inbox: semua percakapan
   useEffect(() => {
@@ -48,6 +52,16 @@ export default function AdminChatPage() {
     });
     return () => unsub();
   }, []);
+
+  // Buka langsung thread pembeli dari tombol "Hubungi" (?userId=<uid>).
+  useEffect(() => {
+    if (preselectedRef.current) return;
+    const uid = searchParams.get("userId");
+    if (uid) {
+      setSelectedId(uid);
+      preselectedRef.current = true;
+    }
+  }, [searchParams]);
 
   // Pesan pada thread terpilih
   useEffect(() => {
@@ -64,6 +78,11 @@ export default function AdminChatPage() {
       markThreadRead(selectedId, "admin").catch(() => {});
     });
     return () => unsub();
+  }, [selectedId]);
+
+  // Kartu nama obrolan = nama profil pembeli (user/{uid}.name), bukan userId.
+  useEffect(() => {
+    if (selectedId) ensureThreadProfile(selectedId).catch(() => {});
   }, [selectedId]);
 
   useEffect(() => {

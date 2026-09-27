@@ -23,6 +23,7 @@ import { ArrowLeft, Download, Upload, FileUp, CheckCircle, Loader2, XCircle, Pac
 import { useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
 import { collection, getDocs, query, where, writeBatch, doc, orderBy, limit, startAt } from "firebase/firestore";
+import { parsePrice } from "@/lib/price";
 import { db } from "@/lib/firebase";
 import * as XLSX from "xlsx";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -39,7 +40,8 @@ interface Product {
   sku: string;
   stock: number;
   category: string;
-  price: string;
+  // Dokumen lama bisa menyimpan harga sebagai string terformat.
+  price: number | string;
   purchasePrice?: number;
 }
 
@@ -53,10 +55,6 @@ interface ExportFilter {
     range: 'all' | 'zero_stock' | string; // string for range like "0-500"
 }
 
-const parseCurrency = (value: string): number => {
-    if (!value || typeof value !== 'string') return 0;
-    return Number(String(value).replace(/[^0-9]/g, ''));
-}
 
 
 const ProductSelectionDialog = ({ onSelect, currentFilter }: { onSelect: (filter: ExportFilter) => void, currentFilter: ExportFilter }) => {
@@ -240,7 +238,7 @@ export default function BulkEditStockPage() {
                     sku: data.sku,
                     name: data.name,
                     stock: data.stock,
-                    price: parseCurrency(data.price),
+                    price: parsePrice(data.price),
                     purchasePrice: data.purchasePrice || 0,
                 }
             });
@@ -313,12 +311,11 @@ export default function BulkEditStockPage() {
                         if (stock !== undefined && stock !== null && typeof stock === 'number') {
                             updates.stock = stock;
                         }
-                        if (price !== undefined && price !== null && typeof price === 'number') {
-                            updates.price = new Intl.NumberFormat("id-ID", {
-                                style: "currency",
-                                currency: "IDR",
-                                minimumFractionDigits: 0,
-                            }).format(price);
+                        // Harga jual disimpan sebagai ANGKA, sama seperti
+                        // stock dan purchasePrice. Kolom Excel yang terlanjur
+                        // berisi teks ("Rp 150.000") ikut dinormalisasi.
+                        if (price !== undefined && price !== null && price !== '') {
+                            updates.price = parsePrice(price);
                         }
                         if (purchasePrice !== undefined && purchasePrice !== null && typeof purchasePrice === 'number') {
                             updates.purchasePrice = purchasePrice;

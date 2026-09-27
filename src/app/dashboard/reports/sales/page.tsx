@@ -4,6 +4,7 @@
 
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { collection, getDocs, doc, getDoc, writeBatch, query, where } from "firebase/firestore";
+import { parsePrice, formatPrice } from "@/lib/price";
 import { db } from "@/lib/firebase";
 import {
   Card,
@@ -70,7 +71,8 @@ interface Product {
   id: string;
   name: string;
   sku: string;
-  price: string;
+  // Dokumen lama bisa menyimpan harga sebagai string terformat.
+  price: number | string;
   stock: number;
   image: string;
   'data-ai-hint'?: string;
@@ -245,7 +247,7 @@ function AddProductToOrderDialog({ currentProducts, onAddProduct }: { currentPro
                                 <TableRow key={p.id}>
                                     <TableCell className="font-medium">{p.name}</TableCell>
                                     <TableCell>{p.stock}</TableCell>
-                                    <TableCell>{p.price}</TableCell>
+                                    <TableCell>{formatPrice(p.price)}</TableCell>
                                     <TableCell>
                                         <Input type="number" defaultValue={1} min={1} max={p.stock} onChange={(e) => setQuantity(Number(e.target.value))} />
                                     </TableCell>
@@ -299,7 +301,7 @@ function EditOrderDialog({ order, onOrderUpdated }: { order: Order, onOrderUpdat
             productId: product.id,
             name: product.name,
             quantity: quantity,
-            price: parseFloat(product.price.replace(/[^0-9]/g, '')),
+            price: parsePrice(product.price),
             imageUrl: product.image,
         };
         setEditableProducts(prev => [...prev, newProduct]);

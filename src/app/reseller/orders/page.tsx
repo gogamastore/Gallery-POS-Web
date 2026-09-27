@@ -125,7 +125,7 @@ function PaymentBadge({ status }: { status: string }) {
     pending_payment: { label: "Belum Bayar",       cls: "bg-orange-100 text-orange-700 border-orange-300" },
     cancelled:       { label: "Dibatalkan",        cls: "bg-red-100 text-red-700 border-red-300" },
     failed:          { label: "Kadaluarsa",        cls: "bg-red-100 text-red-700 border-red-300" },
-    unpaid:          { label: "Belum Lunas",       cls: "bg-yellow-100 text-yellow-700 border-yellow-300" },
+    unpaid:          { label: "Belum Bayar",       cls: "bg-yellow-100 text-yellow-700 border-yellow-300" },
   };
   const cfg = map[s] ?? { label: status, cls: "bg-gray-100 text-gray-700 border-gray-300" };
   return (

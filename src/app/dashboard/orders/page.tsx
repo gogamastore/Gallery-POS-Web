@@ -44,7 +44,7 @@ import { httpsCallable } from "firebase/functions";
 import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import Link from "next/link";
+import { ContactBuyerButton } from "./contact-buyer-button";
 import { format, subDays, startOfDay, endOfDay } from "date-fns";
 import type { DateRange } from "react-day-picker";
 import { id as dateFnsLocaleId } from "date-fns/locale";
@@ -111,7 +111,7 @@ function PaymentBadge({ status }: { status: string }) {
     pending_payment: { label: "Belum Bayar", cls: "bg-orange-100 text-orange-700 border-orange-300" },
     cancelled:       { label: "Dibatalkan",  cls: "bg-red-100 text-red-700 border-red-300" },
     failed:          { label: "Kadaluarsa",  cls: "bg-red-100 text-red-700 border-red-300" },
-    unpaid:          { label: "Belum Lunas", cls: "bg-yellow-100 text-yellow-700 border-yellow-300" },
+    unpaid:          { label: "Belum Bayar", cls: "bg-yellow-100 text-yellow-700 border-yellow-300" },
   };
   const cfg = map[s] ?? { label: status, cls: "bg-gray-100 text-gray-700 border-gray-300" };
   return (
@@ -153,6 +153,7 @@ interface OrderProduct {
 
 interface Order {
   id: string;
+  customerId?: string; // uid pembeli (untuk chat & lookup WhatsApp profil)
   customer: string;
   customerDetails?: {
     name?: string;
@@ -220,6 +221,7 @@ function fromFirestore(id: string, data: Record<string, any>): Order {
   const status = data.status ?? "pending";
   return {
     id,
+    customerId: data.customerId ?? data.userId ?? "",
     customer: data.customerDetails?.name ?? data.customer ?? "N/A",
     customerDetails: data.customerDetails ?? {},
     status,
@@ -1562,27 +1564,14 @@ export default function OrdersPage() {
                         </DropdownMenuContent>
                       </DropdownMenu>
 
-                      {/* Bukti bayar */}
-                      <Dialog>
-                        <DialogTrigger asChild>
-                          <Button variant="outline" size="sm">
-                            <FileText className="mr-2 h-4 w-4" />Bukti Bayar
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent className="max-w-md">
-                          <DialogHeader>
-                            <DialogTitle>Bukti Pembayaran</DialogTitle>
-                            <DialogDescription>{order.customerDetails?.name ?? order.customer}</DialogDescription>
-                          </DialogHeader>
-                          {order.paymentProofUrl ? (
-                            <Link href={order.paymentProofUrl} target="_blank" rel="noopener noreferrer">
-                              <Image src={order.paymentProofUrl} alt="Bukti bayar" width={400} height={400} className="rounded border object-contain w-full" />
-                            </Link>
-                          ) : (
-                            <p className="text-center text-muted-foreground py-8">Belum ada bukti pembayaran.</p>
-                          )}
-                        </DialogContent>
-                      </Dialog>
+                      {/* Hubungi pembeli (Obrolan / WhatsApp) */}
+                      <ContactBuyerButton
+                        orderId={order.id}
+                        customerId={order.customerId}
+                        buyerName={order.customerDetails?.name ?? order.customer}
+                        total={order.total}
+                        status={order.status}
+                      />
 
                       {/* Tombol aksi utama */}
                       {renderMainAction(order, tabName)}

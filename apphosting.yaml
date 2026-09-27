@@ -35,3 +35,13 @@ env:
     value: "true"
   - variable: NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
     value: AIzaSyCMHbCIOjAIFbOs8VcT_wwWiLdz4BL65_A
+  - variable: NEXT_WHATSAPP_API_KEY
+    value: EAAV7XXyonZAoBStSGLntCJcCZAcjc6a44Lq2WizYHqwkfxGkDyKd355u1OyVM5XZAMjXzbp2yuTAU3rdZBUWAFUKt2NY5GW5ZB5l6qf9Rs7EQXZAIGwnETQvdXngvsaI9MLsmpZAQxIaaD5wmE43SIkUGOCVqa15LtJcLNUOmN2G6XsSjX3mtcoATUI1PdNm5ngqgZDZD
+  - variable: NEXT_WHATSAPP_PROVIDER
+    value: meta
+  - variable: NEXT_WHATSAPP_PHONE_NUMBER_ID
+    value: 1233906569815580
+  - variable: NEXT_WHATSAPP_TEMPLATE_NAME
+    value: otp_manafidh
+  - variable: NEXT_WHATSAPP_TEMPLATE_LANG
+    value: id

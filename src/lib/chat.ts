@@ -3,6 +3,7 @@ import {
   addDoc,
   collection,
   doc,
+  getDoc,
   increment,
   serverTimestamp,
   setDoc,
@@ -100,6 +101,30 @@ export async function sendChatMessage(opts: {
     },
     { merge: true }
   );
+}
+
+// Pastikan dokumen thread memakai NAMA PROFIL pembeli (user/{uid}.name) sebagai
+// kartu nama, bukan userId. Dipanggil saat admin membuka thread. Aman dipanggil
+// berulang; hanya menulis bila profil punya data.
+export async function ensureThreadProfile(userId: string): Promise<void> {
+  if (!userId || userId === "guest") return;
+  try {
+    const uSnap = await getDoc(doc(db, "user", userId));
+    if (!uSnap.exists()) return;
+    const u = uSnap.data() as Record<string, any>;
+    const name = (u.name ?? u.displayName ?? "").toString();
+    const email = (u.email ?? "").toString();
+    const photoURL = (u.photoURL ?? "").toString();
+    const updates: Record<string, unknown> = {};
+    if (name) updates.userName = name;
+    if (email) updates.userEmail = email;
+    if (photoURL) updates.userPhotoURL = photoURL;
+    if (Object.keys(updates).length === 0) return;
+    updates.userId = userId;
+    await setDoc(doc(db, "chats", userId), updates, { merge: true });
+  } catch {
+    /* abaikan — tampilan tetap pakai data thread yang ada */
+  }
 }
 
 // Tandai thread sudah dibaca untuk peran tertentu (reset unread).

@@ -19,6 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import { doc, setDoc, addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { sendVerificationEmail } from "@/lib/verification";
+import { normalizeWhatsappNumber } from "@/lib/whatsapp-verification";
 import { Loader2 } from "lucide-react";
 import Image from "next/image";
 
@@ -78,9 +79,12 @@ export default function RegisterPage() {
       await setDoc(doc(db, "user", newUser.uid), {
           name: formData.name.trim(),
           email: formData.email,
-          whatsapp: formData.whatsapp,
+          whatsapp: normalizeWhatsappNumber(formData.whatsapp),
           role: 'reseller', // Ensure role is always reseller
           verificationStatus: 'pending', // wajib verifikasi email sebelum bisa login
+          // Nomor WhatsApp belum dibuktikan aktif — pembeli wajib memasukkan
+          // kode OTP di Profil Saya sebelum bisa memesan.
+          whatsappStatus: 'unverified',
           createdAt: serverTimestamp(), // tanggal akun dibuat (Firestore Timestamp)
       });
 

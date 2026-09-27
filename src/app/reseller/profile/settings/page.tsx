@@ -24,6 +24,9 @@ import { useToast } from '@/hooks/use-toast';
 import { UserCircle, Loader2, ArrowLeft, Image as ImageIcon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
+import WhatsappVerificationField from '@/components/reseller/whatsapp-verification-field';
+import { useWhatsappStatus } from '@/hooks/use-whatsapp-status';
+import { normalizeWhatsappNumber } from '@/lib/whatsapp-verification';
 
 export default function ProfileSettingsPage() {
   const { user, loading: authLoading, updateUserProfile } = useAuth();
@@ -38,6 +41,10 @@ export default function ProfileSettingsPage() {
 
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+
+  // Status & nomor terverifikasi dipantau realtime agar centang biru langsung
+  // muncul setelah Cloud Function menandai nomor sebagai 'verified'.
+  const { status: whatsappStatus, whatsapp: storedWhatsapp } = useWhatsappStatus();
 
   useEffect(() => {
     if (!authLoading && user) {
@@ -87,13 +94,19 @@ export default function ProfileSettingsPage() {
         // 2. Update Firebase Auth profile
         await updateUserProfile(profileData.name, photoURL || '');
 
-        // 3. Update Firestore document
+        // 3. Update Firestore document. Mengganti nomor WhatsApp membatalkan
+        //    verifikasi sebelumnya — nomor baru wajib diverifikasi ulang.
+        const newWhatsapp = normalizeWhatsappNumber(profileData.whatsapp);
         const userDocRef = doc(db, 'user', user.uid);
-        await updateDoc(userDocRef, {
+        const updates: Record<string, any> = {
             name: profileData.name,
-            whatsapp: profileData.whatsapp,
+            whatsapp: newWhatsapp,
             photoURL: photoURL
-        });
+        };
+        if (newWhatsapp !== normalizeWhatsappNumber(storedWhatsapp)) {
+            updates.whatsappStatus = 'unverified';
+        }
+        await updateDoc(userDocRef, updates);
 
       toast({ title: 'Profil Berhasil Diperbarui' });
     } catch (error) {
@@ -157,15 +170,13 @@ export default function ProfileSettingsPage() {
               onChange={handleProfileChange}
             />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="whatsapp">Nomor WhatsApp</Label>
-            <Input
-              id="whatsapp"
-              value={profileData.whatsapp}
-              onChange={handleProfileChange}
-              placeholder="Contoh: 628123456789"
-            />
-          </div>
+          <WhatsappVerificationField
+            value={profileData.whatsapp}
+            onChange={(whatsapp) => setProfileData((prev) => ({ ...prev, whatsapp }))}
+            status={whatsappStatus}
+            verifiedNumber={storedWhatsapp}
+            disabled={isSubmitting}
+          />
            <div className="space-y-2">
             <Label>Email</Label>
             <Input value={user.email || ''} disabled />

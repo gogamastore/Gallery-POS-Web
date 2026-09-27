@@ -37,6 +37,7 @@ import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox";
 import { collection, getDocs, serverTimestamp, doc, writeBatch, deleteDoc } from "firebase/firestore";
+import { parsePrice } from "@/lib/price";
 import { db } from "@/lib/firebase";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -60,14 +61,6 @@ interface Product {
   description?: string;
 }
 
-const parseCurrency = (value: string | number): number => {
-    if (typeof value === 'number') return value;
-    if (typeof value === 'string') {
-        const num = Number(value.replace(/[^0-9]/g, ''));
-        return isNaN(num) ? 0 : num;
-    }
-    return 0;
-}
 
 const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("id-ID", {
@@ -139,14 +132,17 @@ function BulkImportDialog({ onImportSuccess }: { onImportSuccess: () => void }) 
                 const productBatch = writeBatch(db);
 
                 json.forEach((row) => {
-                    if (!row.name || !row.sku || !row.price) return; // Skip invalid rows
+                    if (!row.name || !row.sku || parsePrice(row.price) <= 0) return; // Skip invalid rows
 
                     const productRef = doc(collection(db, "products"));
                     productBatch.set(productRef, {
                         name: row.name,
                         sku: row.sku,
-                        price: new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(row.price || 0),
-                        purchasePrice: Number(row.purchasePrice) || 0,
+                        // Harga jual disimpan sebagai ANGKA, sama seperti
+                        // purchasePrice — kolom Excel boleh berisi angka polos
+                        // maupun teks terformat ("Rp 150.000").
+                        price: parsePrice(row.price),
+                        purchasePrice: parsePrice(row.purchasePrice),
                         stock: Number(row.stock) || 0,
                         weightGram: Number(row.weightGram) || 0,
                         category: row.category || "Uncategorized",
@@ -246,7 +242,7 @@ export default function ProductsPage() {
             return {
                 id: doc.id,
                 ...data,
-                price: parseCurrency(data.price), // Normalize price here
+                price: parsePrice(data.price), // Normalize price here
             } as Product;
         });
         setProducts(productsData);

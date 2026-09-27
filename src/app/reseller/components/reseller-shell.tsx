@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import ResellerHeader from "./reseller-header";
 import ResellerSidebar from "./reseller-sidebar";
 import BottomNav from "./reseller-bottom-nav";
@@ -19,6 +19,11 @@ export default function ResellerShell({ children }: { children: React.ReactNode 
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const { user } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
+  // Footer marketing hanya ditampilkan di halaman profil.
+  const showFooter = pathname?.startsWith("/reseller/profile") ?? false;
+  // Halaman chat: kotak input menempel ke bottom nav (tanpa padding bawah).
+  const isChat = pathname === "/reseller/chat";
 
   // Blokir pengguna yang login tapi emailnya belum diverifikasi
   // (mis. mengakses /reseller langsung via URL). Tamu tidak terpengaruh.
@@ -42,8 +47,8 @@ export default function ResellerShell({ children }: { children: React.ReactNode 
       <div className="flex flex-1">
         <ResellerSidebar open={sidebarOpen} />
         <div className="flex min-w-0 flex-1 flex-col">
-          <main className="flex-1 pb-20 md:pb-0">{children}</main>
-          <Footer />
+          <main className={`flex-1 ${isChat ? "" : "pb-20 md:pb-0"}`}>{children}</main>
+          {showFooter && <Footer />}
         </div>
       </div>
       <BottomNav />

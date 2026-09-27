@@ -23,7 +23,7 @@ import {
 import {
   ArrowLeft, Loader2, MapPin, CheckCircle2, ExternalLink, Clock,
   Truck, PackageCheck, XCircle, RefreshCw, AlertCircle, Printer,
-  FileText, FileBox, Trash2, Package,
+  FileText, FileBox, Trash2, Package, Headset, MessageSquare, Phone,
 } from "lucide-react";
 import Image from "next/image";
 import { format } from "date-fns";
@@ -81,6 +81,7 @@ interface OrderProduct {
 
 interface Order {
   id: string;
+  customerId?: string; // uid pembeli (untuk chat & lookup WhatsApp profil)
   customer: string;
   customerDetails?: {
     name?: string;
@@ -147,6 +148,7 @@ const toNum = (v: unknown): number => {
 function fromFirestore(docId: string, data: Record<string, any>): Order {
   return {
     id: docId,
+    customerId: data.customerId ?? data.userId ?? "",
     customer: data.customerDetails?.name ?? data.customer ?? "N/A",
     customerDetails: data.customerDetails ?? {},
     status: data.status ?? "pending",
@@ -377,6 +379,10 @@ export default function OrderDetailPage() {
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Hubungi pembeli
+  const [contactOpen, setContactOpen] = useState(false);
+  const [contactBusy, setContactBusy] = useState(false);
+
   // ── Real-time listener ─────────────────────────────────────────
 
   useEffect(() => {
@@ -491,6 +497,55 @@ export default function OrderDetailPage() {
     } catch (err: any) {
       toast({ title: "Gagal menghapus", description: err?.message, variant: "destructive" });
       setIsSubmitting(false);
+    }
+  }
+
+  // ── Hubungi Pembeli (Obrolan / WhatsApp) ───────────────────────
+  // Catatan: WhatsApp diambil dari profil user (user/{customerId}.whatsapp)
+  // yang sudah diverifikasi pembeli — BUKAN dari customerDetails pesanan.
+
+  function handleContactBuyerChat() {
+    if (!order) return;
+    if (!order.customerId || order.customerId === "guest") {
+      toast({ title: "Pesanan ini tanpa akun pembeli (guest), tidak bisa dihubungi.", variant: "destructive" });
+      return;
+    }
+    setContactOpen(false);
+    router.push(`/dashboard/chat?userId=${order.customerId}`);
+  }
+
+  async function handleContactBuyerWhatsapp() {
+    if (!order || contactBusy) return;
+    if (!order.customerId || order.customerId === "guest") {
+      toast({ title: "Pesanan ini tanpa akun pembeli (guest), tidak bisa dihubungi.", variant: "destructive" });
+      return;
+    }
+    setContactBusy(true);
+    try {
+      const snap = await getDoc(doc(db, "user", order.customerId));
+      const wa = snap.exists() ? (snap.data().whatsapp as string | undefined) : undefined;
+      if (!wa) {
+        toast({
+          title: "Pembeli belum memiliki WhatsApp terverifikasi.",
+          description: "Minta pembeli memverifikasi nomor WhatsApp di profil mereka.",
+          variant: "destructive",
+        });
+        return;
+      }
+      const num = wa.replace(/[^0-9]/g, "");
+      const shortId = order.id.substring(0, 8).toUpperCase();
+      const buyerName = order.customerDetails?.name ?? order.customer;
+      const text =
+        `Halo ${buyerName}, ini admin Manafidh Store 👋\n\n` +
+        `Kami menghubungi Anda terkait pesanan #${shortId}.\n` +
+        `Total: ${formatCurrency(order.total)}\n` +
+        `Status: ${getStatusInfo(order.status).title}\n\n`;
+      window.open(`https://wa.me/${num}?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
+      setContactOpen(false);
+    } catch {
+      toast({ title: "Gagal memuat nomor WhatsApp pembeli.", variant: "destructive" });
+    } finally {
+      setContactBusy(false);
     }
   }
 
@@ -938,13 +993,13 @@ export default function OrderDetailPage() {
         </div>
       </div>
 
-      {/* ── Tombol Bawah (Tersedia di Semua Status) ── */}
-      {!isCancelled && (
-        <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
-          <div className="px-4 py-3 border-b bg-muted/30">
-            <p className="font-semibold text-sm">Aksi Admin</p>
-          </div>
-          <div className="px-4 py-4 flex flex-wrap gap-2">
+      {/* ── Kotak Aksi Admin (Tersedia di Semua Status) ── */}
+      <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
+        <div className="px-4 py-3 border-b bg-muted/30">
+          <p className="font-semibold text-sm">Aksi Admin</p>
+        </div>
+        <div className="px-4 py-4 space-y-3">
+          <div className="flex flex-wrap gap-2">
             <Button variant="outline" size="sm" onClick={() => generatePdf("invoice")}>
               <FileText className="mr-2 h-4 w-4" />Faktur
             </Button>
@@ -956,7 +1011,7 @@ export default function OrderDetailPage() {
                 <Printer className="mr-2 h-4 w-4" />Cetak Resi
               </Button>
             )}
-            {!isDelivered && (
+            {!isCancelled && !isDelivered && (
               <Button
                 variant="outline"
                 size="sm"
@@ -967,10 +1022,56 @@ export default function OrderDetailPage() {
               </Button>
             )}
           </div>
+          {/* Hubungi pembeli — wajib ada di semua status */}
+          <Button variant="default" className="w-full" onClick={() => setContactOpen(true)}>
+            <Headset className="mr-2 h-4 w-4" />Hubungi Pembeli
+          </Button>
         </div>
-      )}
+      </div>
 
       {/* ── Dialogs ── */}
+
+      {/* Hubungi Pembeli: pilih Obrolan atau WhatsApp */}
+      <Dialog open={contactOpen} onOpenChange={setContactOpen}>
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle>Hubungi Pembeli</DialogTitle>
+            <DialogDescription>
+              Hubungi {order.customerDetails?.name ?? order.customer} tentang pesanan #{order.id.substring(0, 8).toUpperCase()}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Button
+              variant="outline"
+              className="w-full justify-start h-12"
+              onClick={handleContactBuyerChat}
+              disabled={contactBusy}
+            >
+              <MessageSquare className="mr-3 h-5 w-5 text-primary" />
+              <div className="text-left">
+                <p className="font-medium leading-none">Obrolan</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Balas chat pembeli di aplikasi</p>
+              </div>
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full justify-start h-12"
+              onClick={handleContactBuyerWhatsapp}
+              disabled={contactBusy}
+            >
+              {contactBusy ? (
+                <Loader2 className="mr-3 h-5 w-5 animate-spin" />
+              ) : (
+                <Phone className="mr-3 h-5 w-5 text-green-600" />
+              )}
+              <div className="text-left">
+                <p className="font-medium leading-none">WhatsApp</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Nomor WhatsApp terverifikasi pembeli</p>
+              </div>
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Konfirmasi Proses Pesanan */}
       <AlertDialog open={confirmProcessOpen} onOpenChange={setConfirmProcessOpen}>

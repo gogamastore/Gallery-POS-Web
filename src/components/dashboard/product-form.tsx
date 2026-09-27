@@ -43,6 +43,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { ChevronLeft, ImagePlus, Loader2, Save } from "lucide-react";
+import { parsePrice } from "@/lib/price";
 
 interface ProductCategory {
   id: string;
@@ -62,21 +63,7 @@ export interface ProductFormData {
   image?: string;
 }
 
-const parseCurrency = (value: string | number): number => {
-  if (typeof value === "number") return value;
-  if (typeof value === "string") {
-    const num = Number(value.replace(/[^0-9]/g, ""));
-    return isNaN(num) ? 0 : num;
-  }
-  return 0;
-};
 
-const formatRupiah = (amount: number) =>
-  new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    minimumFractionDigits: 0,
-  }).format(amount);
 
 function AddCategoryDialog({
   onCategoryAdded,
@@ -163,7 +150,7 @@ export function ProductForm({ product }: { product?: ProductFormData }) {
     name: product?.name || "",
     sku: product?.sku || "",
     purchasePrice: product?.purchasePrice || 0,
-    price: product ? parseCurrency(product.price ?? 0) : 0,
+    price: parsePrice(product?.price),
     stock: product?.stock || 0,
     weightGram: product?.weightGram || 0,
     category: product?.category || "",
@@ -242,7 +229,9 @@ export function ProductForm({ product }: { product?: ProductFormData }) {
         name: formData.name,
         sku: formData.sku,
         purchasePrice: formData.purchasePrice,
-        price: formatRupiah(formData.price),
+        // Disimpan sebagai ANGKA, sama seperti purchasePrice, agar dokumen
+        // terbaca seragam oleh dashboard, storefront, dan aplikasi Flutter.
+        price: formData.price,
         weightGram: formData.weightGram || 0,
         category: formData.category,
         description: formData.description,

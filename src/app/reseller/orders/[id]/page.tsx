@@ -20,6 +20,13 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   ArrowLeft,
   Loader2,
   CreditCard,
@@ -32,10 +39,20 @@ import {
   XCircle,
   RefreshCw,
   AlertCircle,
+  Headset,
+  MessageSquare,
+  Phone,
 } from "lucide-react";
 import Image from "next/image";
 import { format } from "date-fns";
 import { id as localeId } from "date-fns/locale";
+import { sendChatMessage } from "@/lib/chat";
+import {
+  fetchAdminContact,
+  openAdminWhatsapp,
+  orderChatMessage,
+  orderWhatsappMessage,
+} from "@/lib/contact-admin";
 import type { Order } from "../page";
 
 // ── Firebase Function: tracking ────────────────────────────────────
@@ -212,6 +229,10 @@ export default function OrderDetailPage() {
   const [isConfirming, setIsConfirming] = useState(false);
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
 
+  // Hubungi admin state
+  const [contactOpen, setContactOpen] = useState(false);
+  const [contactBusy, setContactBusy] = useState(false);
+
   // ── Real-time order listener ───────────────────────────────────
 
   useEffect(() => {
@@ -303,6 +324,68 @@ export default function OrderDetailPage() {
     }
   }
 
+  // ── Hubungi Admin ──────────────────────────────────────────────
+
+  const orderChatInfo = useCallback(() => {
+    if (!order) return null;
+    return {
+      id: order.id,
+      total: order.total,
+      statusLabel: getStatusInfo(order.status).title,
+      products: order.products.map((p) => ({ name: p.name, quantity: p.quantity })),
+    };
+  }, [order]);
+
+  async function handleContactChat() {
+    const info = orderChatInfo();
+    if (!info || !user || contactBusy) return;
+    setContactBusy(true);
+    try {
+      await sendChatMessage({
+        userId: user.uid,
+        senderId: user.uid,
+        senderRole: "user",
+        text: orderChatMessage(info),
+        orderRef: {
+          orderId: info.id,
+          shortId: info.id.substring(0, 8).toUpperCase(),
+          total: info.total,
+          status: order?.status,
+        },
+        userInfo: {
+          name: user.displayName || undefined,
+          email: user.email || undefined,
+          photoURL: user.photoURL || undefined,
+        },
+      });
+      setContactOpen(false);
+      router.push("/reseller/chat");
+    } catch {
+      toast({ variant: "destructive", title: "Gagal membuka obrolan" });
+    } finally {
+      setContactBusy(false);
+    }
+  }
+
+  async function handleContactWhatsapp() {
+    const info = orderChatInfo();
+    if (!info || contactBusy) return;
+    setContactBusy(true);
+    try {
+      const admin = await fetchAdminContact();
+      if (!admin) {
+        toast({ variant: "destructive", title: "Kontak admin belum tersedia." });
+        return;
+      }
+      openAdminWhatsapp(admin, orderWhatsappMessage(info, admin.name));
+      setContactOpen(false);
+    } catch {
+      toast({ variant: "destructive", title: "Gagal memuat kontak admin." });
+    } finally {
+      setContactBusy(false);
+    }
+  }
+
   // ── Guards ─────────────────────────────────────────────────────
 
   if (authLoading || loading) {
@@ -345,6 +428,12 @@ export default function OrderDetailPage() {
         <StatusIcon className={`h-7 w-7 shrink-0 ${statusInfo.color}`} />
         <p className={`font-bold text-base ${statusInfo.color}`}>{statusInfo.title}</p>
       </div>
+
+      {/* Hubungi Admin */}
+      <Button variant="outline" className="w-full" onClick={() => setContactOpen(true)}>
+        <Headset className="mr-2 h-4 w-4" />
+        Hubungi
+      </Button>
 
       {/* ── Action Buttons ── */}
 
@@ -577,6 +666,52 @@ export default function OrderDetailPage() {
       </div>
 
       {/* ── Dialogs ── */}
+
+      {/* Hubungi Admin: pilih Obrolan atau WhatsApp */}
+      <Dialog open={contactOpen} onOpenChange={setContactOpen}>
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle>Hubungi Admin</DialogTitle>
+            <DialogDescription>
+              Pilih cara menghubungi admin tentang pesanan #{order.id.substring(0, 8).toUpperCase()}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Button
+              variant="outline"
+              className="w-full justify-start h-12"
+              onClick={handleContactChat}
+              disabled={contactBusy}
+            >
+              {contactBusy ? (
+                <Loader2 className="mr-3 h-5 w-5 animate-spin" />
+              ) : (
+                <MessageSquare className="mr-3 h-5 w-5 text-primary" />
+              )}
+              <div className="text-left">
+                <p className="font-medium leading-none">Obrolan</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Chat di aplikasi + riwayat pesanan</p>
+              </div>
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full justify-start h-12"
+              onClick={handleContactWhatsapp}
+              disabled={contactBusy}
+            >
+              {contactBusy ? (
+                <Loader2 className="mr-3 h-5 w-5 animate-spin" />
+              ) : (
+                <Phone className="mr-3 h-5 w-5 text-green-600" />
+              )}
+              <div className="text-left">
+                <p className="font-medium leading-none">WhatsApp</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Chat admin via WhatsApp</p>
+              </div>
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Pembayaran Kadaluarsa */}
       <AlertDialog open={expiredDialogOpen} onOpenChange={setExpiredDialogOpen}>

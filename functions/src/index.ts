@@ -4,3 +4,4 @@ initializeApp();
 export { createMidtransTransaction, handleMidtransNotification } from "./midtrans";
 export { searchBiteshipArea, getBiteshipRates, createBiteshipOrder, trackBiteshipOrder, biteshipWebhook } from "./biteship";
 export { checkExpiredOrders } from "./midtrans";
+export { sendWhatsappOtp, verifyWhatsappOtp } from "./whatsapp";
