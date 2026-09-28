@@ -32,6 +32,12 @@ export default function ProfileSettingsPage() {
   const { user, loading: authLoading, updateUserProfile } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
+
+  // Redirect di effect (bukan saat render) agar logout tidak memicu error Router.
+  useEffect(() => {
+    if (!authLoading && !user) router.replace('/login');
+  }, [authLoading, user, router]);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const [profileData, setProfileData] = useState({
@@ -124,7 +130,6 @@ export default function ProfileSettingsPage() {
     return <div className="text-center p-8"><Loader2 className="mx-auto h-8 w-8 animate-spin"/></div>;
   }
   if (!user) {
-    router.replace('/login');
     return <div className="text-center p-8"><Loader2 className="mx-auto h-8 w-8 animate-spin"/></div>;
   }
 

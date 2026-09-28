@@ -111,7 +111,7 @@ function PaymentBadge({ status }: { status: string }) {
     pending_payment: { label: "Belum Bayar", cls: "bg-orange-100 text-orange-700 border-orange-300" },
     cancelled:       { label: "Dibatalkan",  cls: "bg-red-100 text-red-700 border-red-300" },
     failed:          { label: "Kadaluarsa",  cls: "bg-red-100 text-red-700 border-red-300" },
-    unpaid:          { label: "Belum Bayar", cls: "bg-yellow-100 text-yellow-700 border-yellow-300" },
+    unpaid:          { label: "Belum Lunas", cls: "bg-yellow-100 text-yellow-700 border-yellow-300" },
   };
   const cfg = map[s] ?? { label: status, cls: "bg-gray-100 text-gray-700 border-gray-300" };
   return (
@@ -980,7 +980,7 @@ export default function OrdersPage() {
   const [storeInfo, setStoreInfo] = useState<StoreInfo>({ name: "Manafidh Store", phone: "", address: "" });
   // Kelola Pengiriman (tab "Perlu Dikirim")
   const [shipSubTab, setShipSubTab] = useState<"update" | "print">("update");
-  const [shipMode, setShipMode] = useState<"instant" | "reguler">("reguler");
+  const [shipMode, setShipMode] = useState<"instant" | "reguler" | "pickup">("reguler");
   const [shipCourier, setShipCourier] = useState<string>("all");
   const [printedFilter, setPrintedFilter] = useState<"all" | "printed" | "unprinted">("all");
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -1231,14 +1231,16 @@ export default function OrdersPage() {
 
   const applyShipFilters = useCallback(
     (source: Order[]) => {
-      // Jenis pengiriman: instan vs reguler (non-instan)
-      let list = source.filter((o) =>
-        shipMode === "instant"
-          ? isInstantCourier(o.biteshipCourierCode)
-          : !isInstantCourier(o.biteshipCourierCode)
-      );
-      // Kurir spesifik
-      if (shipCourier !== "all") {
+      // Jenis pengiriman: Reguler (kurir non-instan) / Instan / Ambil di Tempat
+      // (non-kurir: pickup/COD, tanpa kode kurir Biteship).
+      let list = source.filter((o) => {
+        const code = o.biteshipCourierCode;
+        if (shipMode === "instant") return isInstantCourier(code);
+        if (shipMode === "pickup") return !code;
+        return !!code && !isInstantCourier(code);
+      });
+      // Kurir spesifik (tidak berlaku untuk Ambil di Tempat)
+      if (shipMode !== "pickup" && shipCourier !== "all") {
         list = list.filter((o) => (o.biteshipCourierCode ?? "").toLowerCase() === shipCourier);
       }
       // Filter status cetak (khusus tab Cetak Pengiriman)
@@ -1254,6 +1256,7 @@ export default function OrdersPage() {
     const targets = allOrders.filter(
       (o) =>
         selectedOrders.includes(o.id) &&
+        !!o.biteshipCourierCode &&
         !isInstantCourier(o.biteshipCourierCode) &&
         !o.biteshipOrderId
     );
@@ -1261,7 +1264,7 @@ export default function OrdersPage() {
       toast({
         variant: "destructive",
         title: "Tidak ada pesanan untuk diproses",
-        description: "Pilih pesanan reguler yang belum diproses (pengiriman instan diproses manual).",
+        description: "Pilih pesanan reguler yang belum diproses (instan & ambil di tempat diproses manual).",
       });
       return;
     }
@@ -1332,8 +1335,8 @@ export default function OrdersPage() {
         if (order.biteshipOrderId) {
           return <ShipmentDetailDialog order={order} storeInfo={storeInfo} />;
         }
-        // Pickup / COD tanpa Biteship
-        if (!order.biteshipCourierCode && order.shippingMethod?.toLowerCase() === "pickup") {
+        // Pickup / COD tanpa Biteship (tanpa kode kurir) — tak bisa via Biteship.
+        if (!order.biteshipCourierCode) {
           return (
             <Button size="sm" onClick={() => updateOrderStatus(order.id, { status: "Shipped", shippedAt: serverTimestamp() })}>
               <Truck className="mr-2 h-4 w-4" />Tandai Diambil
@@ -1594,13 +1597,14 @@ export default function OrdersPage() {
     const couriers = shipMode === "instant" ? INSTANT_COURIERS : REGULER_COURIERS;
     const selectedInManaged = managed.filter((o) => selectedOrders.includes(o.id));
     const printMissingResi = selectedInManaged.some(
-      (o) => !isInstantCourier(o.biteshipCourierCode) && !o.waybillId
+      (o) => !!o.biteshipCourierCode && !isInstantCourier(o.biteshipCourierCode) && !o.waybillId
     );
     const updatableTargets = selectedInManaged.filter(
-      (o) => !isInstantCourier(o.biteshipCourierCode) && !o.biteshipOrderId
+      (o) => !!o.biteshipCourierCode && !isInstantCourier(o.biteshipCourierCode) && !o.biteshipOrderId
     );
-    const canBulkPrint = selectedInManaged.length > 0 && !printMissingResi;
-    const canBulkUpdate = shipMode !== "instant" && updatableTargets.length > 0;
+    // Ambil di Tempat (pickup/COD): tanpa resi/label → aksi massal nonaktif.
+    const canBulkPrint = shipMode !== "pickup" && selectedInManaged.length > 0 && !printMissingResi;
+    const canBulkUpdate = shipMode === "reguler" && updatableTargets.length > 0;
 
     const selectCls =
       "h-9 rounded-md border border-input bg-background px-3 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring";
@@ -1640,18 +1644,27 @@ export default function OrdersPage() {
               >
                 Instan
               </Button>
+              <Button
+                size="sm"
+                variant={shipMode === "pickup" ? "default" : "outline"}
+                onClick={() => { setShipMode("pickup"); setShipCourier("all"); }}
+              >
+                Ambil di Tempat
+              </Button>
             </div>
           </div>
 
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">Kurir</Label>
-            <select className={selectCls} value={shipCourier} onChange={(e) => setShipCourier(e.target.value)}>
-              <option value="all">Semua Kurir</option>
-              {couriers.map((c) => (
-                <option key={c.code} value={c.code}>{c.name}</option>
-              ))}
-            </select>
-          </div>
+          {shipMode !== "pickup" && (
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Kurir</Label>
+              <select className={selectCls} value={shipCourier} onChange={(e) => setShipCourier(e.target.value)}>
+                <option value="all">Semua Kurir</option>
+                {couriers.map((c) => (
+                  <option key={c.code} value={c.code}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {shipSubTab === "print" && (
             <div className="space-y-1">
@@ -1692,6 +1705,12 @@ export default function OrdersPage() {
           <p className="text-xs text-orange-600 flex items-center gap-1.5 px-1">
             <AlertCircle className="h-3.5 w-3.5" />
             Pengiriman instan tidak dapat diproses massal — proses manual pada masing-masing pesanan.
+          </p>
+        )}
+        {shipMode === "pickup" && (
+          <p className="text-xs text-muted-foreground flex items-center gap-1.5 px-1">
+            <AlertCircle className="h-3.5 w-3.5" />
+            Ambil di Tempat (termasuk COD) — tanpa resi/kurir. Proses per pesanan: tandai diambil / validasi.
           </p>
         )}
         {shipSubTab === "print" && printMissingResi && (

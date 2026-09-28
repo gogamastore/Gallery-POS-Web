@@ -7,6 +7,7 @@ import { httpsCallable } from "firebase/functions";
 import {
   collection,
   addDoc,
+  getDoc,
   getDocs,
   deleteDoc,
   doc,
@@ -128,6 +129,8 @@ function MapPicker({ initialLat, initialLng, onLocationPicked }: MapPickerProps)
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<google.maps.Map | null>(null);
   const markerRef = useRef<google.maps.Marker | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const placesLibRef = useRef<any>(null); // Places API (New) via JS SDK
   const [mapLoaded, setMapLoaded] = useState(false);
   const [isGeocoding, setIsGeocoding] = useState(false);
 
@@ -145,6 +148,13 @@ function MapPicker({ initialLat, initialLng, onLocationPicked }: MapPickerProps)
           version: "weekly",
         });
         await importLibrary("maps");
+        // Places (New) untuk autocomplete — opsional; jika gagal, fallback ke
+        // geocoding (tombol/Enter) tetap jalan.
+        try {
+          placesLibRef.current = await importLibrary("places");
+        } catch {
+          /* Places tidak tersedia */
+        }
         if (!cancelled) setMapLoaded(true);
       } catch (e) {
         console.error("Gagal memuat Google Maps:", e);
@@ -219,8 +229,155 @@ function MapPicker({ initialLat, initialLng, onLocationPicked }: MapPickerProps)
     );
   };
 
+  // ── Pencarian titik alamat: autocomplete (Places API New via JS SDK) ──
+  const searchRef = useRef<HTMLInputElement>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sessionTokenRef = useRef<any>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [suggestions, setSuggestions] = useState<
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    Array<{ placeId: string; primary: string; secondary: string; prediction: any }>
+  >([]);
+
+  useEffect(() => () => { if (debounceRef.current) clearTimeout(debounceRef.current); }, []);
+
+  const moveTo = (lat: number, lng: number, label?: string) => {
+    mapInstanceRef.current?.panTo({ lat, lng });
+    mapInstanceRef.current?.setZoom(17);
+    markerRef.current?.setPosition({ lat, lng });
+    onLocationPicked(lat, lng);
+    if (label && searchRef.current) searchRef.current.value = label;
+    setSuggestions([]);
+  };
+
+  const fetchSuggestions = async (input: string) => {
+    const lib = placesLibRef.current;
+    if (!lib?.AutocompleteSuggestion) return; // Places (New) tak tersedia
+    try {
+      if (!sessionTokenRef.current) sessionTokenRef.current = new lib.AutocompleteSessionToken();
+      const { suggestions: sug } =
+        await lib.AutocompleteSuggestion.fetchAutocompleteSuggestions({
+          input,
+          includedRegionCodes: ["id"],
+          language: "id",
+          sessionToken: sessionTokenRef.current,
+        });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const list = ((sug ?? []) as any[])
+        .map((s) => {
+          const p = s.placePrediction;
+          return p
+            ? {
+                placeId: p.placeId ?? "",
+                primary: p.mainText?.text ?? p.text?.text ?? "",
+                secondary: p.secondaryText?.text ?? "",
+                prediction: p,
+              }
+            : null;
+        })
+        .filter(Boolean);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      setSuggestions(list as any);
+    } catch {
+      setSuggestions([]);
+    }
+  };
+
+  const onSearchInput = (val: string) => {
+    setSearchError(null);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (val.trim().length < 3) { setSuggestions([]); return; }
+    debounceRef.current = setTimeout(() => fetchSuggestions(val.trim()), 300);
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const selectSuggestion = async (item: { primary: string; prediction: any }) => {
+    setIsSearching(true);
+    try {
+      const place = item.prediction.toPlace();
+      await place.fetchFields({ fields: ["location"] });
+      const loc = place.location;
+      if (loc) moveTo(loc.lat(), loc.lng(), item.primary);
+      sessionTokenRef.current = null; // reset sesi setelah pemilihan
+    } catch {
+      setSearchError("Gagal memuat detail lokasi.");
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  // Fallback: forward geocoding (Enter/tombol) bila autocomplete tak tersedia.
+  const handleSearch = async () => {
+    const q = searchRef.current?.value.trim();
+    if (!q || !mapInstanceRef.current) return;
+    if (suggestions.length > 0) { selectSuggestion(suggestions[0]); return; }
+    setIsSearching(true);
+    setSearchError(null);
+    try {
+      const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+      const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(q)}&key=${key}&language=id&region=id&components=country:ID`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.status === "OK" && data.results?.length) {
+        const l = data.results[0].geometry.location as { lat: number; lng: number };
+        moveTo(l.lat, l.lng);
+      } else {
+        setSearchError("Lokasi tidak ditemukan. Coba kata kunci lain atau geser pin manual.");
+      }
+    } catch {
+      setSearchError("Gagal mencari lokasi. Coba lagi.");
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
   return (
     <div className="space-y-3">
+      {/* Kotak pencarian titik alamat (autocomplete) */}
+      <div className="relative">
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
+            <input
+              ref={searchRef}
+              type="text"
+              placeholder="Cari nama tempat / alamat..."
+              disabled={!mapLoaded}
+              onChange={(e) => onSearchInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleSearch(); } }}
+              className="w-full h-10 rounded-md border border-input bg-background pl-8 pr-3 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+          </div>
+          <Button type="button" variant="secondary" onClick={handleSearch} disabled={!mapLoaded || isSearching}>
+            {isSearching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+          </Button>
+        </div>
+        {/* Daftar sugesti alamat */}
+        {suggestions.length > 0 && (
+          <div className="absolute z-20 left-0 right-0 mt-1 max-h-64 overflow-y-auto rounded-md border bg-background shadow-lg">
+            {suggestions.map((s) => (
+              <button
+                key={s.placeId}
+                type="button"
+                onClick={() => selectSuggestion(s)}
+                className="flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-accent"
+              >
+                <MapPin className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium truncate">{s.primary}</span>
+                  {s.secondary && (
+                    <span className="block text-xs text-muted-foreground truncate">{s.secondary}</span>
+                  )}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      {searchError && <p className="text-xs text-orange-600">{searchError}</p>}
+
       <div className="relative">
         <div ref={mapRef} className="w-full h-64 rounded-lg border bg-muted" />
         {!mapLoaded && (
@@ -262,6 +419,8 @@ export default function AddressPage() {
   const [editingAddress, setEditingAddress] = useState<UserAddress | null>(null);
   const [form, setForm] = useState<AddressForm>(emptyForm());
   const [isReverseGeocoding, setIsReverseGeocoding] = useState(false);
+  // Default Nama Penerima & WhatsApp diambil dari profil reseller (bisa diedit).
+  const [profileDefaults, setProfileDefaults] = useState<{ name: string; phone: string }>({ name: "", phone: "" });
 
   // Biteship area search
   const [areaQuery, setAreaQuery] = useState("");
@@ -292,6 +451,27 @@ export default function AddressPage() {
     if (!authLoading && user) fetchAddresses();
   }, [user, authLoading, fetchAddresses]);
 
+  // Ambil nama & WhatsApp profil reseller sebagai default form alamat baru.
+  useEffect(() => {
+    if (!user) return;
+    getDoc(doc(db, "user", user.uid))
+      .then((snap) => {
+        const d = snap.exists() ? (snap.data() as Record<string, any>) : {};
+        setProfileDefaults({
+          name: (d.name ?? d.displayName ?? "").toString(),
+          phone: (d.whatsapp ?? "").toString(),
+        });
+      })
+      .catch(() => {});
+  }, [user]);
+
+  // Redirect ke login saat belum/terputus login (mis. setelah logout).
+  // WAJIB di effect, bukan saat render — memanggil router.replace saat render
+  // memicu error "Cannot update a component (Router) while rendering AddressPage".
+  useEffect(() => {
+    if (!authLoading && !user) router.replace("/login");
+  }, [authLoading, user, router]);
+
   // Close area dropdown on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -307,7 +487,8 @@ export default function AddressPage() {
 
   function openAddSheet() {
     setEditingAddress(null);
-    setForm(emptyForm());
+    // Prefill Nama Penerima & WhatsApp dari profil (tetap bisa diedit).
+    setForm({ ...emptyForm(), name: profileDefaults.name, phone: profileDefaults.phone });
     setAreaQuery("");
     setAreaResults([]);
     setSheetOpen(true);
@@ -562,7 +743,7 @@ export default function AddressPage() {
   // ── Guards ─────────────────────────────────────────────────────
 
   if (authLoading) return <div className="flex justify-center p-12"><Loader2 className="h-8 w-8 animate-spin" /></div>;
-  if (!user) { router.replace("/login"); return null; }
+  if (!user) return null; // redirect ditangani useEffect di atas
 
   const hasCoords = form.latitude != null && form.longitude != null;
   const hasBiteshipArea = !!form.biteshipDestinationAreaId;

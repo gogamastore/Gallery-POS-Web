@@ -683,7 +683,10 @@ export default function CheckoutPage() {
         adminFee,
         serviceFee,
         paymentStatus: "Unpaid",
-        status: "Pending",
+        // COD (Ambil di Toko) tidak lewat Midtrans → langsung "Processing" agar
+        // muncul di tab "Diproses" (reseller) & "Perlu Dikirim" (admin) untuk
+        // disiapkan/diserahkan. Midtrans tetap "Pending" sampai pembayaran.
+        status: paymentMethod === "cod" ? "Processing" : "Pending",
         stockUpdated: true,
         date: serverTimestamp(),
         createdAt: serverTimestamp(),

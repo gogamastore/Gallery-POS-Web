@@ -22,6 +22,12 @@ export default function ProfilePage() {
   const { toast } = useToast();
   const router = useRouter();
 
+  // Redirect di effect (bukan saat render) agar logout tidak memicu error
+  // "Cannot update a component (Router) while rendering".
+  useEffect(() => {
+    if (!authLoading && !user) router.replace('/login');
+  }, [authLoading, user, router]);
+
   const handleLogout = async () => {
     try {
         await signOut();
@@ -36,7 +42,6 @@ export default function ProfilePage() {
     return <div className="flex h-[80vh] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin"/></div>;
   }
   if (!user) {
-    router.replace('/login');
     return <div className="flex h-[80vh] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin"/></div>;
   }
 

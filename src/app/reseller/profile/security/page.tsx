@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,6 +21,11 @@ export default function SecurityPage() {
   const { user, loading: authLoading, reauthenticate, changePassword } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
+
+  // Redirect di effect (bukan saat render) agar logout tidak memicu error Router.
+  useEffect(() => {
+    if (!authLoading && !user) router.replace('/login');
+  }, [authLoading, user, router]);
 
   const [passwordData, setPasswordData] = useState({
       currentPassword: '',
@@ -62,7 +67,6 @@ export default function SecurityPage() {
     return <div className="text-center p-8"><Loader2 className="mx-auto h-8 w-8 animate-spin"/></div>;
   }
   if (!user) {
-    router.replace('/login');
     return <div className="text-center p-8"><Loader2 className="mx-auto h-8 w-8 animate-spin"/></div>;
   }
 
