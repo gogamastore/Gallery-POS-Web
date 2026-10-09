@@ -703,6 +703,13 @@ export default function CheckoutPage() {
         orderData.biteshipServiceCode = selectedRate.courierServiceCode;
         orderData.biteshipCourierName = selectedRate.courierName;
         orderData.biteshipServiceName = selectedRate.serviceName;
+        // WAJIB untuk kurir instan (GoSend/Grab/Paxel): createBiteshipOrder
+        // butuh koordinat tujuan dari order. Tanpa ini, proses pesanan instan
+        // gagal: "kurir instan membutuhkan koordinat GPS toko & tujuan".
+        if (addressCoords) {
+          orderData.destinationLatitude = addressCoords.lat;
+          orderData.destinationLongitude = addressCoords.lng;
+        }
       }
 
       // Tulis semua dalam batch. Pengurangan stok memakai increment(-qty)

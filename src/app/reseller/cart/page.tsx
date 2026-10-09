@@ -12,6 +12,7 @@ import { useRouter } from "next/navigation";
 import { db } from "@/lib/firebase";
 import { doc, getDoc } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
+import { useWhatsappStatus } from "@/hooks/use-whatsapp-status";
 import { cn } from "@/lib/utils";
 
 
@@ -28,11 +29,27 @@ export default function CartPage() {
   const { cart, updateQuantity, removeFromCart, totalAmount, loading } = useCart();
   const router = useRouter();
   const { toast } = useToast();
+  const { status: whatsappStatus, loading: whatsappLoading } = useWhatsappStatus();
   const [isCheckingStock, setIsCheckingStock] = useState(false);
   const [invalidStockProducts, setInvalidStockProducts] = useState<string[]>([]);
 
 
   const handleProceedToCheckout = async () => {
+    // ── Gate: wajib verifikasi WhatsApp sebelum checkout ──────────
+    if (whatsappLoading) {
+      toast({ title: "Memeriksa status verifikasi WhatsApp..." });
+      return;
+    }
+    if (whatsappStatus !== "verified") {
+      toast({
+        variant: "destructive",
+        title: "Verifikasi WhatsApp diperlukan",
+        description: "Verifikasi nomor WhatsApp Anda di halaman profil untuk dapat checkout.",
+      });
+      router.push("/reseller/profile/settings");
+      return;
+    }
+
     setIsCheckingStock(true);
     setInvalidStockProducts([]); // Reset previous errors
     const invalidProducts: { name: string; stock: number }[] = [];

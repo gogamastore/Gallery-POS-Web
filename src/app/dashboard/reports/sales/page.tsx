@@ -4,7 +4,6 @@
 
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { collection, getDocs, doc, getDoc, writeBatch, query, where } from "firebase/firestore";
-import { parsePrice, formatPrice } from "@/lib/price";
 import { db } from "@/lib/firebase";
 import {
   Card,
@@ -47,7 +46,8 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
-import { DollarSign, Package, Calendar as CalendarIcon, FileText, Loader2, ArrowLeft, Printer, Edit, PlusCircle, Search, Minus, Plus, Trash2 } from "lucide-react";
+import { DollarSign, Package, Calendar as CalendarIcon, FileText, Loader2, ArrowLeft, Printer, Edit, PlusCircle, Search, Minus, Plus, Trash2, TrendingUp } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 import { format, isValid, startOfDay, endOfDay } from "date-fns";
 import { id as dateFnsLocaleId } from "date-fns/locale";
 import Image from "next/image";
@@ -71,8 +71,7 @@ interface Product {
   id: string;
   name: string;
   sku: string;
-  // Dokumen lama bisa menyimpan harga sebagai string terformat.
-  price: number | string;
+  price: string;
   stock: number;
   image: string;
   'data-ai-hint'?: string;
@@ -104,6 +103,8 @@ interface Order {
   source?: string;
   /** Nama kasir/validator — terisi untuk POS & pesanan marketplace tervalidasi. */
   kasir?: string;
+  /** Metode pembayaran pembeli: cash / bank_transfer / qris / midtrans / cod. */
+  paymentMethod?: string;
   products: OrderProduct[];
 }
 
@@ -148,6 +149,28 @@ const formatCurrency = (amount: number) => {
     currency: "IDR",
     minimumFractionDigits: 0,
   }).format(amount);
+};
+
+/** Label metode pembayaran pembeli yang mudah dibaca. */
+const paymentMethodLabel = (method?: string) => {
+  switch ((method ?? "").toLowerCase()) {
+    case "cash":
+    case "tunai":
+      return "Tunai";
+    case "cod":
+      return "COD (Bayar di Tempat)";
+    case "bank_transfer":
+    case "transfer":
+      return "Transfer Bank";
+    case "midtrans":
+      return "Qris";
+    case "qris":
+      return "QRIS";
+    case "":
+      return "-";
+    default:
+      return method as string;
+  }
 };
 
 const processSalesDataForChart = (orders: Order[]) => {
@@ -247,7 +270,7 @@ function AddProductToOrderDialog({ currentProducts, onAddProduct }: { currentPro
                                 <TableRow key={p.id}>
                                     <TableCell className="font-medium">{p.name}</TableCell>
                                     <TableCell>{p.stock}</TableCell>
-                                    <TableCell>{formatPrice(p.price)}</TableCell>
+                                    <TableCell>{p.price}</TableCell>
                                     <TableCell>
                                         <Input type="number" defaultValue={1} min={1} max={p.stock} onChange={(e) => setQuantity(Number(e.target.value))} />
                                     </TableCell>
@@ -301,7 +324,7 @@ function EditOrderDialog({ order, onOrderUpdated }: { order: Order, onOrderUpdat
             productId: product.id,
             name: product.name,
             quantity: quantity,
-            price: parsePrice(product.price),
+            price: parseFloat(product.price.replace(/[^0-9]/g, '')),
             imageUrl: product.image,
         };
         setEditableProducts(prev => [...prev, newProduct]);
@@ -478,7 +501,7 @@ function EditOrderDialog({ order, onOrderUpdated }: { order: Order, onOrderUpdat
     )
 }
 
-function OrderDetailDialog({ orderId, onOrderUpdated }: { orderId: string, onOrderUpdated: () => void }) {
+function OrderDetailDialog({ orderId, onOrderUpdated, isOwner }: { orderId: string, onOrderUpdated: () => void, isOwner: boolean }) {
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
@@ -491,7 +514,23 @@ function OrderDetailDialog({ orderId, onOrderUpdated }: { orderId: string, onOrd
         if (orderDoc.exists()) {
             const data = orderDoc.data();
             const total = typeof data.total === 'string' ? parseFloat(data.total.replace(/[^0-9]/g, '')) : data.total || 0;
-            setOrder({ 
+
+            const productDocs = await getDocs(collection(db, "products"));
+            const productMap = new Map<string, any>();
+            productDocs.forEach(pDoc => productMap.set(pDoc.id, pDoc.data()));
+
+            const productsWithModal = (data.products || []).map((p: any) => {
+                const productInfo = productMap.get(p.productId);
+                // Modal = snapshot saat validasi (products[].purchasePrice) →
+                // fallback ke modal produk terkini untuk pesanan lama.
+                return {
+                    ...p,
+                    purchasePrice: typeof p.purchasePrice === 'number' ? p.purchasePrice : (productInfo?.purchasePrice ?? 0),
+                    image: p.image || productInfo?.image || ''
+                }
+            });
+
+            setOrder({
                 id: orderDoc.id,
                 ...data,
                 total,
@@ -499,7 +538,7 @@ function OrderDetailDialog({ orderId, onOrderUpdated }: { orderId: string, onOrd
                 shippingFee: data.shippingFee || 0,
                 date: toIsoString(data.date),
                 validatedAt: toIsoString(data.validatedAt) || toIsoString(data.date),
-                products: data.products || [],
+                products: productsWithModal,
              } as Order);
         }
     } catch (error) {
@@ -563,6 +602,14 @@ function OrderDetailDialog({ orderId, onOrderUpdated }: { orderId: string, onOrd
       pdfDoc.output("dataurlnewwindow");
   }
 
+  const orderProfit = useMemo(() => {
+    if (!order) return 0;
+    return order.products.reduce((total, p) => {
+        const productProfit = (p.price - (p.purchasePrice || 0)) * p.quantity;
+        return total + productProfit;
+    }, 0);
+  }, [order]);
+
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
@@ -588,6 +635,7 @@ function OrderDetailDialog({ orderId, onOrderUpdated }: { orderId: string, onOrd
                   <p><strong>Nama:</strong> {order.customerDetails?.name || order.customer}</p>
                   <p><strong>Alamat:</strong> {order.customerDetails?.address || 'N/A'}</p>
                   <p><strong>WhatsApp:</strong> {order.customerDetails?.whatsapp || 'N/A'}</p>
+                  <p><strong>Metode Pembayaran:</strong> {paymentMethodLabel(order.paymentMethod)}</p>
                 </CardContent>
               </Card>
               <Card>
@@ -602,20 +650,25 @@ function OrderDetailDialog({ orderId, onOrderUpdated }: { orderId: string, onOrd
                         <TableHead>Jumlah</TableHead>
                         <TableHead className="text-right">Harga Satuan</TableHead>
                         <TableHead className="text-right">Subtotal</TableHead>
+                        {isOwner && <TableHead className="text-right text-primary">Keuntungan</TableHead>}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {order.products?.map(p => (
-                        <TableRow key={p.productId}>
-                          <TableCell className="flex items-center gap-2">
-                            <Image src={p.imageUrl || p.image || 'https://placehold.co/40x40.png'} alt={p.name} width={40} height={40} className="rounded" />
-                            {p.name}
-                          </TableCell>
-                          <TableCell>{p.quantity}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(p.price)}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(p.price * p.quantity)}</TableCell>
-                        </TableRow>
-                      ))}
+                      {order.products?.map(p => {
+                        const productProfit = (p.price - (p.purchasePrice || 0)) * p.quantity;
+                        return (
+                          <TableRow key={p.productId}>
+                            <TableCell className="flex items-center gap-2">
+                              <Image src={p.imageUrl || p.image || 'https://placehold.co/40x40.png'} alt={p.name} width={40} height={40} className="rounded" />
+                              {p.name}
+                            </TableCell>
+                            <TableCell>{p.quantity}</TableCell>
+                            <TableCell className="text-right">{formatCurrency(p.price)}</TableCell>
+                            <TableCell className="text-right">{formatCurrency(p.price * p.quantity)}</TableCell>
+                            {isOwner && <TableCell className="text-right font-medium text-primary">{formatCurrency(productProfit)}</TableCell>}
+                          </TableRow>
+                        )
+                      })}
                     </TableBody>
                   </Table>
                 </CardContent>
@@ -624,6 +677,12 @@ function OrderDetailDialog({ orderId, onOrderUpdated }: { orderId: string, onOrd
                 <p>Subtotal Produk: <span className="font-medium">{formatCurrency(order.subtotal)}</span></p>
                 <p>Biaya Pengiriman: <span className="font-medium">{formatCurrency(order.shippingFee)}</span></p>
                 <p className="font-bold text-base border-t pt-2 mt-2">Total: <span className="text-primary">{formatCurrency(order.total)}</span></p>
+                {isOwner && (
+                    <div className="flex items-center justify-end gap-2 pt-1">
+                        <TrendingUp className="h-4 w-4 text-primary" />
+                        <p className="font-bold text-primary">Total Keuntungan Pesanan: {formatCurrency(orderProfit)}</p>
+                    </div>
+                )}
               </div>
             </div>
              <DialogFooter className="justify-between">
@@ -652,6 +711,21 @@ export default function SalesReportPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   // Filter kanal penjualan: 'all' (default, tampil pertama) / 'pos' / 'marketplace'
   const [sourceFilter, setSourceFilter] = useState<"all" | "pos" | "marketplace">("all");
+  // Angka keuntungan (laba) hanya untuk akun Owner (user.position === "Owner").
+  const { user } = useAuth();
+  const [isOwner, setIsOwner] = useState(false);
+
+  useEffect(() => {
+    const checkOwner = async () => {
+        if (user) {
+            const userDoc = await getDoc(doc(db, "user", user.uid));
+            if (userDoc.exists()) {
+                setIsOwner(userDoc.data().position === "Owner");
+            }
+        }
+    };
+    checkOwner();
+  }, [user]);
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -699,9 +773,13 @@ export default function SalesReportPage() {
 
           const productsWithCogs = data.products.map((p: OrderProduct) => {
               const productInfo = productMap.get(p.productId);
+              // Modal = snapshot saat validasi (products[].purchasePrice) →
+              // fallback ke modal produk terkini untuk pesanan lama yang belum
+              // punya snapshot.
+              const storedModal = (p as any).purchasePrice;
               return {
                   ...p,
-                  purchasePrice: productInfo?.purchasePrice || 0,
+                  purchasePrice: typeof storedModal === 'number' ? storedModal : (productInfo?.purchasePrice ?? 0),
                   image: p.image || productInfo?.image || ''
               }
           });
@@ -864,7 +942,7 @@ export default function SalesReportPage() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className={isOwner ? "grid gap-4 md:grid-cols-3" : "grid gap-4 md:grid-cols-2"}>
          <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Pendapatan</CardTitle>
@@ -872,7 +950,7 @@ export default function SalesReportPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{formatCurrency(totalRevenue)}</div>
-            <p className="text-xs text-muted-foreground">HPP: {formatCurrency(totalCogs)}</p>
+            {isOwner && <p className="text-xs text-muted-foreground">HPP: {formatCurrency(totalCogs)}</p>}
           </CardContent>
         </Card>
         <Card>
@@ -885,6 +963,7 @@ export default function SalesReportPage() {
              <p className="text-xs text-muted-foreground">Pesanan dengan status Diproses, Dikirim, & Selesai</p>
           </CardContent>
         </Card>
+        {isOwner && (
          <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Keuntungan (Laba Kotor)</CardTitle>
@@ -895,6 +974,7 @@ export default function SalesReportPage() {
             <p className="text-xs text-muted-foreground">Total Pendapatan - Total HPP</p>
           </CardContent>
         </Card>
+        )}
       </div>
 
        <Card>
@@ -939,7 +1019,9 @@ export default function SalesReportPage() {
                     <TableHead>Kasir</TableHead>
                     <TableHead>Tanggal Diproses</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Metode Bayar</TableHead>
                     <TableHead className="text-right">Total</TableHead>
+                    {isOwner && <TableHead className="text-right text-primary">Laba</TableHead>}
                 </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -952,10 +1034,13 @@ export default function SalesReportPage() {
                             : order.status.toLowerCase() === 'processing'
                             ? 'Diproses'
                             : order.status;
+
+                        const orderProfit = order.products.reduce((sum, p) => sum + ((p.price - (p.purchasePrice || 0)) * p.quantity), 0);
+
                         return (
                             <TableRow key={order.id}>
                                 <TableCell>
-                                <OrderDetailDialog orderId={order.id} onOrderUpdated={fetchOrders} />
+                                <OrderDetailDialog orderId={order.id} onOrderUpdated={fetchOrders} isOwner={isOwner} />
                                 </TableCell>
                                 <TableCell>{customerName(order)}</TableCell>
                                 <TableCell>{kasirName(order)}</TableCell>
@@ -972,15 +1057,21 @@ export default function SalesReportPage() {
                                     {statusText}
                                 </Badge>
                                 </TableCell>
+                                <TableCell>{paymentMethodLabel(order.paymentMethod)}</TableCell>
                                 <TableCell className="text-right">
                                 {formatCurrency(order.total)}
                                 </TableCell>
+                                {isOwner && (
+                                    <TableCell className="text-right font-medium text-primary">
+                                    {formatCurrency(orderProfit)}
+                                    </TableCell>
+                                )}
                             </TableRow>
                         )
                     })
                 ) : (
                     <TableRow>
-                    <TableCell colSpan={6} className="text-center h-24">
+                    <TableCell colSpan={isOwner ? 8 : 7} className="text-center h-24">
                         Tidak ada data penjualan untuk rentang tanggal ini.
                     </TableCell>
                     </TableRow>

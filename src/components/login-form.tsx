@@ -89,8 +89,34 @@ export default function LoginForm() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-sm shadow-2xl">
+    <div className="min-h-screen w-full md:grid md:grid-cols-2">
+      {/* Panel kiri (desktop): foto promo Manafidh */}
+      <div className="relative hidden md:block">
+        <Image
+          src="https://firebasestorage.googleapis.com/v0/b/gallerypos.firebasestorage.app/o/latar%20app.png?alt=media&token=efd771c3-da73-4082-bc3d-b05bee235b43"
+          alt="Manafidh Kosmetik"
+          fill
+          priority
+          sizes="50vw"
+          className="object-cover"
+        />
+      </div>
+
+      {/* Panel kanan: form login. Di mobile, foto jadi background penuh. */}
+      <div className="relative flex min-h-screen items-center justify-center p-4">
+        <Image
+          src="https://firebasestorage.googleapis.com/v0/b/gallerypos.firebasestorage.app/o/latar%20app.png?alt=media&token=efd771c3-da73-4082-bc3d-b05bee235b43"
+          alt=""
+          aria-hidden
+          fill
+          priority
+          sizes="100vw"
+          className="object-cover md:hidden"
+        />
+        {/* Overlay gelap agar kartu tetap terbaca di atas foto (mobile) */}
+        <div className="absolute inset-0 bg-black/40 md:hidden" aria-hidden />
+
+        <Card className="relative z-10 w-full max-w-sm border-0 shadow-2xl bg-card/95 backdrop-blur-sm md:border md:bg-card md:backdrop-blur-0">
         <CardHeader className="space-y-1 text-center">
             <div className="flex flex-col justify-center items-center gap-4 mb-4">
                 <Logo />
@@ -150,6 +176,7 @@ export default function LoginForm() {
             </div>
         </CardFooter>
       </Card>
+      </div>
     </div>
   );
 }

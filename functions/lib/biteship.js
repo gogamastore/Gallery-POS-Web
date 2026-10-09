@@ -280,6 +280,12 @@ exports.createBiteshipOrder = (0, https_1.onCall)({ region: "asia-southeast1", s
         "gojek", "grab", "grab_express", "gosend", "paxel", "lalamove", "borzo",
     ];
     const isInstant = INSTANT_COURIERS.includes((order.biteshipCourierCode ?? "").toLowerCase());
+    // Diagnostik: log nilai koordinat SEBELUM throw agar jelas sisi mana yang
+    // 0 (origin = secret, dest = field order). Memastikan diagnosis instan.
+    v2_1.logger.info(`createBiteshipOrder coords: order=${orderId}, courier=${order.biteshipCourierCode}, ` +
+        `isInstant=${isInstant}, origin=(${originLat},${originLng}) hasOrigin=${hasOriginCoords}, ` +
+        `dest=(${destLat},${destLng}) hasDest=${hasDestCoords}, ` +
+        `rawDest=(${order.destinationLatitude},${order.destinationLongitude})`);
     if (isInstant && !(hasOriginCoords && hasDestCoords)) {
         throw new https_1.HttpsError("failed-precondition", "Kurir instan membutuhkan koordinat GPS toko & tujuan. " +
             "Pastikan secret BITESHIP_ORIGIN_LATITUDE/LONGITUDE sudah diset " +
@@ -448,8 +454,9 @@ exports.trackBiteshipOrder = (0, https_1.onCall)({ region: "asia-southeast1", se
             biteshipStatus: biteshipData.status,
             updatedAt: firestore_1.FieldValue.serverTimestamp(),
         };
-        if (newStatus && newStatus !== order.status)
+        if (newStatus && newStatus !== order.status && shouldApplyStatus(order.status, newStatus)) {
             updateFields.status = newStatus;
+        }
         // Isi waybillId jika Firestore masih kosong tapi Biteship sudah punya
         if (freshWaybillId && !order.waybillId)
             updateFields.waybillId = freshWaybillId;
@@ -519,6 +526,7 @@ exports.biteshipWebhook = (0, https_1.onRequest)({ region: "asia-southeast1", se
             return;
         }
         const orderDoc = orderQuery.docs[0];
+        const currentStatus = orderDoc.data()?.status;
         const newOrderStatus = mapBiteshipStatus(event.order?.status);
         // Resi ada di courier.waybill_id
         const waybillId = (event.order?.courier?.waybill_id ?? event.order?.waybill_id);
@@ -526,8 +534,10 @@ exports.biteshipWebhook = (0, https_1.onRequest)({ region: "asia-southeast1", se
             biteshipStatus: event.order?.status,
             updatedAt: firestore_1.FieldValue.serverTimestamp(),
         };
-        if (newOrderStatus)
+        // Hanya terapkan bila maju (jangan turunkan pesanan yang sudah shipped).
+        if (newOrderStatus && shouldApplyStatus(currentStatus, newOrderStatus)) {
             updateData.status = newOrderStatus;
+        }
         if (waybillId)
             updateData.waybillId = waybillId;
         if (event.order?.courier?.tracking_id) {
@@ -558,5 +568,26 @@ function mapBiteshipStatus(s) {
     if (lower.includes("cancelled") || lower.includes("failed") || lower.includes("returned"))
         return "cancelled";
     return null;
+}
+// Cegah status "mundur". createBiteshipOrder langsung men-set "shipped", jadi
+// event webhook/tracking "allocating" (→ "processing") TIDAK boleh menurunkan
+// pesanan yang sudah "shipped" kembali ke "Perlu Dikirim" (khusus kurir instan).
+// Aturan: "delivered"/"cancelled" bersifat final; "cancelled" boleh dari status
+// aktif; selain itu hanya boleh maju (rank naik).
+const STATUS_RANK = {
+    pending: 0,
+    processing: 1,
+    shipped: 2,
+    delivered: 3,
+};
+function shouldApplyStatus(current, next) {
+    const c = (current ?? "").toLowerCase();
+    if (c === "delivered" || c === "cancelled")
+        return false; // final
+    if (next === "cancelled")
+        return true;
+    const cr = STATUS_RANK[c] ?? -1;
+    const nr = STATUS_RANK[next] ?? -1;
+    return nr > cr;
 }
 //# sourceMappingURL=biteship.js.map

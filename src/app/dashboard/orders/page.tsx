@@ -45,7 +45,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { ContactBuyerButton } from "./contact-buyer-button";
-import { format, subDays, startOfDay, endOfDay } from "date-fns";
+import { format, subDays, subMonths, startOfDay, endOfDay } from "date-fns";
 import type { DateRange } from "react-day-picker";
 import { id as dateFnsLocaleId } from "date-fns/locale";
 import jsPDF from "jspdf";
@@ -974,7 +974,11 @@ export default function OrdersPage() {
   const [allOrders, setAllOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState<string | null>(null);
-  const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
+  // Default: pesanan 1 bulan terakhir (semua status). Bisa diubah/di-reset user.
+  const [dateRange, setDateRange] = useState<DateRange | undefined>({
+    from: startOfDay(subMonths(new Date(), 1)),
+    to: endOfDay(new Date()),
+  });
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
   const [storeInfo, setStoreInfo] = useState<StoreInfo>({ name: "Manafidh Store", phone: "", address: "" });
@@ -1338,7 +1342,9 @@ export default function OrdersPage() {
         // Pickup / COD tanpa Biteship (tanpa kode kurir) — tak bisa via Biteship.
         if (!order.biteshipCourierCode) {
           return (
-            <Button size="sm" onClick={() => updateOrderStatus(order.id, { status: "Shipped", shippedAt: serverTimestamp() })}>
+            // validatedAt = waktu pesanan DIPROSES (dipakai laporan). Pesanan
+            // "Ambil di Toko" diproses saat ditandai diambil, jadi set di sini.
+            <Button size="sm" onClick={() => updateOrderStatus(order.id, { status: "Shipped", shippedAt: serverTimestamp(), validatedAt: serverTimestamp() })}>
               <Truck className="mr-2 h-4 w-4" />Tandai Diambil
             </Button>
           );
@@ -1757,6 +1763,17 @@ export default function OrdersPage() {
               <PopoverContent className="w-auto p-0" align="end">
                 <Calendar mode="range" defaultMonth={dateRange?.from}
                   selected={dateRange} onSelect={setDateRange} numberOfMonths={2} />
+                <div className="flex justify-between gap-2 border-t p-2">
+                  <Button variant="ghost" size="sm" onClick={() => setDateRange(undefined)}>
+                    Tampilkan semua
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => setDateRange({
+                    from: startOfDay(subMonths(new Date(), 1)),
+                    to: endOfDay(new Date()),
+                  })}>
+                    1 bulan terakhir
+                  </Button>
+                </div>
               </PopoverContent>
             </Popover>
             {/* Bulk download */}

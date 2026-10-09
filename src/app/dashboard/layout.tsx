@@ -20,8 +20,8 @@ import { useAuth } from "@/hooks/use-auth";
 function Logo() {
   return (
     <Link href="/dashboard" className="flex items-center gap-2 font-semibold font-headline text-lg">
-      <Image src="https://firebasestorage.googleapis.com/v0/b/gallery-makassar.firebasestorage.app/o/GM%20logo.png?alt=media&token=35855c49-17b5-4a6d-9887-45134c7ad829" alt="Gallery Makassar Logo" width={32} height={32} />
-       <span className="group-[.collapsed]:hidden">Gallery Makassar</span>
+      <Image src="https://firebasestorage.googleapis.com/v0/b/gallerypos.firebasestorage.app/o/Manafidh%20Logo.png?alt=media&token=4472e2c9-c319-4222-85e8-708dbf36e7be" alt="Manafidh Store Logo" width={32} height={32} />
+       <span className="group-[.collapsed]:hidden">Manafidh Office</span>
     </Link>
   );
 }
@@ -84,12 +84,13 @@ export default function DashboardLayout({
     <PurchaseCartProvider>
       <div className="grid min-h-screen w-full md:grid-cols-[220px_1fr] lg:grid-cols-[280px_1fr] group">
         <div className="hidden border-r bg-card md:block">
-          <div className="flex h-full max-h-screen flex-col gap-2">
+          <div className="flex h-full max-h-screen flex-col">
             <div className="flex h-14 items-center border-b px-4 lg:h-[60px] lg:px-6">
               <Logo />
             </div>
-            <div className="flex-1">
-              <nav className="grid items-start px-2 text-sm font-medium lg:px-4">
+            {/* Area navigasi — pink merek Manafidh. */}
+            <div className="flex-1 overflow-y-auto bg-primary text-primary-foreground">
+              <nav className="grid items-start px-2 py-3 text-sm font-medium lg:px-4">
                 <MainNav />
               </nav>
             </div>
@@ -104,9 +105,9 @@ export default function DashboardLayout({
                   <span className="sr-only">Toggle navigation menu</span>
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="flex flex-col">
+              <SheetContent side="left" className="flex flex-col bg-primary text-primary-foreground [&>button]:text-primary-foreground [&>button]:opacity-80">
                 <SheetHeader>
-                  <SheetTitle>
+                  <SheetTitle className="text-primary-foreground">
                     <Logo />
                   </SheetTitle>
                   <SheetDescription className="sr-only">

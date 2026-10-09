@@ -19,10 +19,23 @@ import {
   Package,
   Replace,
   Receipt,
+  Wallet,
 } from "lucide-react"
 import Link from "next/link"
 
 const reportCards = [
+  {
+    title: "Laporan Pendapatan",
+    description: "Rincian pendapatan harian & metode pembayaran (POS & Marketplace).",
+    icon: Wallet,
+    href: "/dashboard/reports/revenue",
+  },
+  {
+    title: "Laporan Cashdrawer",
+    description: "Uang masuk laci kas: POS + marketplace \"Ambil di Toko\".",
+    icon: Wallet,
+    href: "/dashboard/reports/cashdrawer",
+  },
   {
     title: "Laporan Transaksi Pembelian",
     description: "Lacak semua transaksi pembelian stok.",

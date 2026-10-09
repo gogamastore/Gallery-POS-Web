@@ -38,6 +38,8 @@ const navItems = [
 
 const reportsSubMenu = [
   { href: "/dashboard/reports/sales", label: "Penjualan" },
+  { href: "/dashboard/reports/revenue", label: "Pendapatan" },
+  { href: "/dashboard/reports/cashdrawer", label: "Cashdrawer" },
   { href: "/dashboard/reports/product-sales", label: "Penjualan Produk" },
   { href: "/dashboard/reports/purchases", label: "Pembelian" },
   { href: "/dashboard/reports/operational-expenses", label: "Beban Operasional" },
@@ -109,8 +111,8 @@ export function MainNav() {
             className={cn(
               "flex w-full items-center justify-start gap-3 rounded-md p-2 text-sm font-medium transition-colors",
               isActive
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                ? "bg-white text-primary shadow-sm"
+                : "text-white/85 hover:bg-white/15 hover:text-white"
             )}
           >
             <Icon className="h-4 w-4 shrink-0" />
@@ -158,8 +160,8 @@ export function MainNav() {
                 className={cn(
                   "flex w-full items-center rounded-md px-2 py-1.5 text-sm transition-colors",
                   isActive
-                    ? "bg-primary/10 text-primary font-medium"
-                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                    ? "bg-white/20 text-white font-semibold"
+                    : "text-white/85 hover:bg-white/15 hover:text-white"
                 )}
               >
                 {item.label}
@@ -196,10 +198,10 @@ export function MainNav() {
                 className={cn(
                   "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors",
                   isActive
-                    ? "bg-primary/10 text-primary font-medium"
-                    : item.highlight
-                    ? "text-primary/80 hover:bg-primary/5 hover:text-primary font-medium"
-                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                  ? "bg-white/20 text-white font-semibold"
+                  : item.highlight
+                  ? "text-white font-medium hover:bg-white/10 hover:text-white"
+                  : "text-white/85 hover:bg-white/15 hover:text-white"
                 )}
               >
                 {Icon && <Icon className="h-3.5 w-3.5 shrink-0" />}
