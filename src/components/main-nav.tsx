@@ -13,11 +13,12 @@ import {
   Settings,
   ChevronDown,
   TicketPercent,
-  Percent,
   FileClock,
-  Bell,
+  Percent,
   MapPin,
   MessageSquare,
+  Bell,
+  SquarePen,
 } from "lucide-react";
 import {
   Collapsible,
@@ -64,12 +65,6 @@ const settingsSubMenu = [
     highlight: true,
   },
   {
-    href: "/dashboard/settings/notification-popup",
-    label: "Notifikasi",
-    icon: Bell,
-    highlight: true,
-  },
-  {
     href: "/dashboard/settings/admin-fees",
     label: "Biaya Admin & Layanan",
     icon: Percent,
@@ -81,6 +76,18 @@ const settingsSubMenu = [
     icon: TicketPercent,
     highlight: true,
   },
+  {
+    href: "/dashboard/settings/app-builder",
+    label: "Builder Aplikasi",
+    icon: SquarePen,
+    highlight: true,
+  },
+  {
+    href: "/dashboard/settings/notification-popup",
+    label: "Notifikasi",
+    icon: Bell,
+    highlight: true,
+  },
   { href: "/dashboard/settings/bank-accounts", label: "Rekening Bank" },
   { href: "/dashboard/settings/staff", label: "Manajemen Staf" },
   { href: "/dashboard/settings/contacts", label: "Daftar Kontak" },
@@ -88,6 +95,7 @@ const settingsSubMenu = [
   { href: "/dashboard/settings/product-categories", label: "Kategori Produk" },
   { href: "/dashboard/settings/brands", label: "Manajemen Brand" },
   { href: "/dashboard/settings/promo", label: "Promo" },
+  { href: "/dashboard/settings/design", label: "Desain" },
   { href: "/dashboard/settings/trending-products", label: "Produk Trending" },
 ];
 
@@ -127,8 +135,8 @@ export function MainNav() {
           className={cn(
             "flex w-full items-center justify-between gap-3 rounded-md p-2 text-sm font-medium transition-colors",
             isReportsOpen
-              ? "bg-primary text-primary-foreground"
-              : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              ? "bg-white text-primary shadow-sm"
+              : "text-white/85 hover:bg-white/15 hover:text-white"
           )}
         >
           <div className="flex items-center gap-3">
@@ -177,8 +185,8 @@ export function MainNav() {
           className={cn(
             "flex w-full items-center justify-between gap-3 rounded-md p-2 text-sm font-medium transition-colors",
             isSettingsOpen
-              ? "bg-primary text-primary-foreground"
-              : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              ? "bg-white text-primary shadow-sm"
+              : "text-white/85 hover:bg-white/15 hover:text-white"
           )}
         >
           <div className="flex items-center gap-3">
@@ -198,10 +206,10 @@ export function MainNav() {
                 className={cn(
                   "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors",
                   isActive
-                  ? "bg-white/20 text-white font-semibold"
-                  : item.highlight
-                  ? "text-white font-medium hover:bg-white/10 hover:text-white"
-                  : "text-white/85 hover:bg-white/15 hover:text-white"
+                    ? "bg-white/20 text-white font-semibold"
+                    : item.highlight
+                    ? "text-white font-medium hover:bg-white/10 hover:text-white"
+                    : "text-white/85 hover:bg-white/15 hover:text-white"
                 )}
               >
                 {Icon && <Icon className="h-3.5 w-3.5 shrink-0" />}

@@ -21,6 +21,7 @@ import {
   Bell,
   Ticket,
   Receipt,
+  Smartphone,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -84,6 +85,14 @@ const settingsCards = [
     description: "Atur banner dan tampilan halaman reseller.",
     icon: LayoutTemplate,
     href: "/dashboard/settings/design",
+  },
+  {
+    title: "App Builder (Desain Aplikasi)",
+    description:
+      "Susun tampilan beranda aplikasi Android (blok, layout produk, warna, font) lalu Publish tanpa update aplikasi.",
+    icon: Smartphone,
+    href: "/dashboard/settings/app-builder",
+    highlight: true,
   },
   {
     title: "Promo",

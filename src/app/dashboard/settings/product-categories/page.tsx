@@ -13,7 +13,9 @@ import {
   orderBy,
   query
 } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { db, storage } from '@/lib/firebase';
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -57,22 +59,36 @@ import {
 interface ProductCategory {
   id: string;
   name: string;
+  imageUrl?: string;
 }
 
 function CategoryFormDialog({ category, onSave }: { category?: ProductCategory, onSave: () => void }) {
     const [isOpen, setIsOpen] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [name, setName] = useState('');
+    const [imageFile, setImageFile] = useState<File | null>(null);
+    const [imagePreview, setImagePreview] = useState<string | null>(null);
     const { toast } = useToast();
 
     useEffect(() => {
         if (category) {
             setName(category.name);
+            setImagePreview(category.imageUrl || null);
         } else {
             setName('');
+            setImagePreview(null);
         }
-    }, [category]);
-    
+        setImageFile(null);
+    }, [category, isOpen]);
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files[0]) {
+            const file = e.target.files[0];
+            setImageFile(file);
+            setImagePreview(URL.createObjectURL(file));
+        }
+    };
+
     const handleSubmit = async () => {
         if (!name.trim()) {
             toast({ variant: 'destructive', title: 'Nama kategori tidak boleh kosong.' });
@@ -80,13 +96,21 @@ function CategoryFormDialog({ category, onSave }: { category?: ProductCategory, 
         }
         setIsSubmitting(true);
         try {
+            let imageUrl = category?.imageUrl || '';
+            if (imageFile) {
+                const storageRef = ref(storage, `category_icons/${Date.now()}_${imageFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`);
+                await uploadBytes(storageRef, imageFile);
+                imageUrl = await getDownloadURL(storageRef);
+            }
+
             if (category) {
                 const docRef = doc(db, 'product_categories', category.id);
-                await updateDoc(docRef, { name: name.trim() });
+                await updateDoc(docRef, { name: name.trim(), imageUrl });
                 toast({ title: "Kategori berhasil diperbarui." });
             } else {
-                await addDoc(collection(db, 'product_categories'), { 
+                await addDoc(collection(db, 'product_categories'), {
                     name: name.trim(),
+                    imageUrl,
                     createdAt: serverTimestamp(),
                 });
                 toast({ title: "Kategori berhasil ditambahkan." });
@@ -117,9 +141,19 @@ function CategoryFormDialog({ category, onSave }: { category?: ProductCategory, 
                 <DialogHeader>
                     <DialogTitle>{category ? 'Edit Kategori' : 'Tambah Kategori Baru'}</DialogTitle>
                 </DialogHeader>
-                <div className="py-4 space-y-2">
-                    <Label htmlFor="category-name">Nama Kategori</Label>
-                    <Input id="category-name" value={name} onChange={(e) => setName(e.target.value)} />
+                <div className="py-4 space-y-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="category-name">Nama Kategori</Label>
+                        <Input id="category-name" value={name} onChange={(e) => setName(e.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="category-icon">Ikon / Gambar Kategori (opsional)</Label>
+                        {imagePreview && (
+                            <Image src={imagePreview} alt="Preview Ikon" width={80} height={80} className="rounded-md object-contain border bg-muted p-1" />
+                        )}
+                        <Input id="category-icon" type="file" accept="image/*" onChange={handleFileChange} />
+                        <p className="text-xs text-muted-foreground">Disarankan PNG transparan. Dipakai sebagai ikon kategori di halaman &quot;Lihat Semua&quot;.</p>
+                    </div>
                 </div>
                 <DialogFooter>
                     <Button variant="outline" onClick={() => setIsOpen(false)}>Batal</Button>
@@ -145,7 +179,7 @@ export default function ProductCategoriesPage() {
       const q = query(collection(db, 'product_categories'), orderBy('name', 'asc'));
       const querySnapshot = await getDocs(q);
       const fetchedCategories = querySnapshot.docs.map(
-        (doc) => ({ id: doc.id, name: doc.data().name } as ProductCategory)
+        (doc) => ({ id: doc.id, ...doc.data() } as ProductCategory)
       );
       setCategories(fetchedCategories);
     } catch (error) {
@@ -205,7 +239,11 @@ export default function ProductCategoriesPage() {
                   className="flex items-center justify-between rounded-lg border p-4"
                 >
                   <div className="flex items-center gap-4">
-                    <LayoutGrid className="h-5 w-5 text-muted-foreground" />
+                    {category.imageUrl ? (
+                      <Image src={category.imageUrl} alt={category.name} width={36} height={36} className="h-9 w-9 rounded-md object-contain bg-muted p-1" />
+                    ) : (
+                      <LayoutGrid className="h-5 w-5 text-muted-foreground" />
+                    )}
                     <p className="font-medium">{category.name}</p>
                   </div>
                   <DropdownMenu>

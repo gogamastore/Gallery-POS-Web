@@ -9,6 +9,8 @@ import ProductListItem from "../product-list-item";
 import { useToast } from "@/hooks/use-toast";
 import { Card } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
+import { useAppLayout } from "@/components/storefront-builder/use-app-layout";
+import { CatalogProductsView } from "@/components/storefront-builder/catalog-view";
 
 // Render bertahap: jumlah awal & penambahan per "scroll".
 const INITIAL_VISIBLE = 24;
@@ -49,6 +51,9 @@ export default function ProductGrid({ searchTerm, category, viewMode = "grid" }:
     const [allProducts, setAllProducts] = useState<Product[]>([]);
     const [loading, setLoading] = useState(true);
     const { toast } = useToast();
+    // Konfigurasi App Builder (settings/app_layout → catalog). Hanya dipakai
+    // untuk tampilan GRID; mode "list" tetap memakai ProductListItem bawaan.
+    const { layout: appLayout, hasConfig } = useAppLayout();
 
     useEffect(() => {
         async function fetchProducts() {
@@ -193,6 +198,8 @@ export default function ProductGrid({ searchTerm, category, viewMode = "grid" }:
                                     <ProductListItem key={product.id} product={product} />
                                 ))}
                             </div>
+                        ) : hasConfig ? (
+                            <CatalogProductsView products={visibleProducts} layout={appLayout} />
                         ) : (
                             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 sm:gap-4">
                                 {visibleProducts.map((product) => (
