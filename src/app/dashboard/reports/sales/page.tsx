@@ -163,7 +163,7 @@ const paymentMethodLabel = (method?: string) => {
     case "transfer":
       return "Transfer Bank";
     case "midtrans":
-      return "Qris";
+      return "Midtrans";
     case "qris":
       return "QRIS";
     case "":
@@ -837,13 +837,18 @@ export default function SalesReportPage() {
     
     const revenue = validOrders.reduce((acc, order) => acc + order.total, 0);
     const ordersCount = validOrders.length;
-    
+
     const cogs = validOrders.reduce((acc, order) => {
         const orderCogs = order.products.reduce((sum, p) => sum + ((p.purchasePrice || 0) * p.quantity), 0);
         return acc + orderCogs;
     }, 0);
-    
-    const profit = revenue - cogs;
+
+    // Keuntungan HANYA dari penjualan produk (harga jual - modal) × qty.
+    // Biaya admin, biaya layanan, biaya layanan pembayaran, & ongkir TIDAK
+    // dihitung sebagai keuntungan (bukan margin produk).
+    const productRevenue = validOrders.reduce((acc, order) =>
+        acc + order.products.reduce((sum, p) => sum + (p.price * p.quantity), 0), 0);
+    const profit = productRevenue - cogs;
     
     const chartDataProcessed = processSalesDataForChart(validOrders);
     
@@ -971,7 +976,7 @@ export default function SalesReportPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{formatCurrency(grossProfit)}</div>
-            <p className="text-xs text-muted-foreground">Total Pendapatan - Total HPP</p>
+            <p className="text-xs text-muted-foreground">Subtotal Produk - Total HPP (tanpa biaya admin/layanan &amp; ongkir)</p>
           </CardContent>
         </Card>
         )}

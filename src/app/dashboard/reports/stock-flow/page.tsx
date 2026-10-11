@@ -119,6 +119,14 @@ const formatCurrency = (amount: number) => {
   }).format(amount);
 };
 
+/** Pesanan dianggap dibatalkan (case-insensitive). Marketplace menulis
+ *  "Cancelled", POS menulis "cancelled"/"canceled" — semua harus dikenali
+ *  sebagai pembatalan (stok kembali), bukan penjualan. */
+const isCancelledStatus = (status: unknown): boolean => {
+  const s = String(status ?? "").toLowerCase().trim();
+  return s === "cancelled" || s === "canceled" || s === "dibatalkan";
+};
+
 
 function PurchaseDetailDialog({ transactionId }: { transactionId: string }) {
     const [transaction, setTransaction] = useState<FullPurchaseTransaction | null>(null);
@@ -413,7 +421,11 @@ function StockHistoryDialog({ product, dateRange }: { product: Product, dateRang
         const startDate = startOfDay(from);
         const endDate = endOfDay(to);
 
-        // 1. Fetch ALL Orders (as stock out)
+        // 1. Semua pesanan di rentang tanggal (sekali baca). Pesanan yang
+        //    DIBATALKAN (case-insensitive: marketplace "Cancelled", POS
+        //    "cancelled"/"canceled") = stok MASUK (dikembalikan); selain itu
+        //    = stok KELUAR (penjualan). Sebelumnya status 'canceled' lolos
+        //    sebagai penjualan karena pengecekan hanya cocok "Cancelled".
         const allOrdersQuery = query(
             collection(db, "orders"),
             where("productIds", "array-contains", productId),
@@ -423,41 +435,29 @@ function StockHistoryDialog({ product, dateRange }: { product: Product, dateRang
         const allOrdersSnapshot = await getDocs(allOrdersQuery);
         allOrdersSnapshot.forEach(doc => {
             const orderData = doc.data();
-            // Don't log a stock out for an order that was immediately cancelled in the same period
-            if (orderData.status !== 'Cancelled') {
-                 orderData.products?.forEach((item: { productId: string, quantity: number }) => {
-                    if (item.productId === productId) {
-                        movements.push({
-                            date: orderData.date.toDate(),
-                            type: 'Penjualan',
-                            quantityChange: -item.quantity,
-                            relatedInfo: doc.id,
-                            description: `Pelanggan: ${orderData.customer}`
-                        });
-                    }
-                });
-            }
-        });
-        
-        // 2. Fetch Cancelled Orders (as stock IN)
-        const cancelledQuery = query(
-            collection(db, "orders"),
-            where("productIds", "array-contains", productId),
-            where("status", "==", "Cancelled"),
-            where("date", ">=", startDate),
-            where("date", "<=", endDate)
-        );
-        const cancelledSnapshot = await getDocs(cancelledQuery);
-        cancelledSnapshot.forEach(doc => {
-            const orderData = doc.data();
+            const cancelled = isCancelledStatus(orderData.status);
+            // Nama pelanggan. Transaksi kasir (source 'pos') tidak punya nama
+            // pembeli → tampilkan "Toko Offline".
+            const customerName = String(orderData.source ?? "") === "pos"
+                ? "Toko Offline"
+                : (orderData.customer || "Pelanggan");
             orderData.products?.forEach((item: { productId: string, quantity: number }) => {
-                if (item.productId === productId) {
+                if (item.productId !== productId) return;
+                if (cancelled) {
                     movements.push({
                         date: orderData.date.toDate(),
                         type: 'Pesanan Dibatalkan',
-                        quantityChange: item.quantity, // Positive change
+                        quantityChange: item.quantity, // stok kembali (masuk)
                         relatedInfo: doc.id,
-                        description: `Stok dikembalikan dari pesanan: ${orderData.customer}`
+                        description: `Pelanggan: ${customerName} (stok dikembalikan)`
+                    });
+                } else {
+                    movements.push({
+                        date: orderData.date.toDate(),
+                        type: 'Penjualan',
+                        quantityChange: -item.quantity,
+                        relatedInfo: doc.id,
+                        description: `Pelanggan: ${customerName}`
                     });
                 }
             });

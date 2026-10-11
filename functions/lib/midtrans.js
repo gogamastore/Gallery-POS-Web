@@ -31,7 +31,7 @@ exports.createMidtransTransaction = (0, https_1.onCall)({ region: "asia-southeas
     if (!request.auth) {
         throw new https_1.HttpsError("unauthenticated", "User harus login.");
     }
-    const { orderId, qrisOnly } = request.data;
+    const { orderId, qrisOnly, finishUrl } = request.data;
     if (!orderId) {
         throw new https_1.HttpsError("invalid-argument", "orderId wajib diisi.");
     }
@@ -41,6 +41,9 @@ exports.createMidtransTransaction = (0, https_1.onCall)({ region: "asia-southeas
     }
     const order = orderDoc.data();
     const isPosOrder = order.source === "pos";
+    // Channel Midtrans tunggal yang dipilih pembeli (bank/ewallet/QRIS). Bila
+    // ada → Snap dibatasi ke channel ini saja.
+    const paymentChannelCode = typeof order.paymentChannelCode === "string" ? order.paymentChannelCode.trim() : "";
     const userDoc = await db.collection("user").doc(request.auth.uid).get();
     const user = userDoc.data() ?? {};
     const isStaff = POS_STAFF_ROLES.includes(user.role);
@@ -106,6 +109,16 @@ exports.createMidtransTransaction = (0, https_1.onCall)({ region: "asia-southeas
             name: "Biaya Layanan",
         });
     }
+    // Biaya layanan pembayaran per metode (order.total sudah termasuk). WAJIB
+    // sebagai baris agar jumlah item_details = gross_amount (ditolak bila beda).
+    if (order.paymentFee && order.paymentFee > 0) {
+        itemDetails.push({
+            id: "PAYMENT_FEE",
+            price: Math.round(order.paymentFee),
+            quantity: 1,
+            name: "Biaya Layanan Pembayaran",
+        });
+    }
     const grossAmount = Math.round(order.total);
     // Harga kasir POS bisa pecahan; pembulatan per item dapat membuat jumlah
     // item_details ≠ gross_amount (ditolak Midtrans) → tambah baris selisih.
@@ -141,26 +154,36 @@ exports.createMidtransTransaction = (0, https_1.onCall)({ region: "asia-southeas
                 billing_address: { address: order.customerDetails?.address ?? "" },
                 shipping_address: { address: order.customerDetails?.address ?? "" },
             },
-        // Kasir POS hanya menerima QRIS lewat Midtrans (tunai & transfer bank
-        // ditangani langsung di kasir). Validasi marketplace di kasir juga bisa
-        // minta QRIS-only via `qrisOnly`. Pembeli marketplace (checkout mandiri)
-        // tetap bisa semua metode. `other_qris` = kanal QRIS generik di Snap.
+        // Prioritas channel:
+        //  1. POS / qrisOnly (kasir minta QRIS di konter) → QRIS saja
+        //     (`other_qris` = kanal QRIS generik di Snap). Diutamakan agar
+        //     pembayaran di kasir tidak terkunci ke pilihan online lama pembeli.
+        //  2. order.paymentChannelCode → channel tunggal yang dipilih pembeli di
+        //     halaman checkout (Transfer Bank/E-wallet/QRIS) → Snap langsung ke
+        //     channel itu tanpa layar pemilihan metode.
+        //  3. Fallback: semua metode (order lama tanpa channel / kompatibilitas).
         enabled_payments: isPosOrder || qrisOnly === true
             ? ["other_qris"]
-            : [
-                "gopay", "shopeepay", "other_qris",
-                "bca_va", "bni_va", "bri_va", "mandiri_bill", "permata_va", "other_va",
-                "indomaret", "alfamart", "credit_card",
-            ],
+            : paymentChannelCode
+                ? [paymentChannelCode]
+                : [
+                    "gopay", "shopeepay", "other_qris",
+                    "bca_va", "bni_va", "bri_va", "echannel", "permata_va", "bsi_va", "cimb_va", "other_va",
+                    "indomaret", "alfamart", "credit_card",
+                ],
         expiry: isPosOrder
             ? { unit: "minutes", duration: POS_EXPIRY_MINUTES }
             : { unit: "hours", duration: 24 },
     };
-    // Deep link aplikasi pembeli. Kasir POS memantau status lewat Firestore.
+    // Callback kembali setelah pembayaran. Web mengirim `finishUrl` (URL web)
+    // agar e-wallet (ShopeePay/GoPay) bisa kembali ke browser; aplikasi Flutter
+    // tanpa finishUrl → deeplink `gogama://` (buka kembali aplikasi).
+    // Kasir POS memantau status lewat Firestore → tanpa callback.
     if (!isPosOrder) {
-        parameter.callbacks = {
-            finish: `gogama://payment-result?order_id=${orderId}`,
-        };
+        const finish = finishUrl && finishUrl.trim()
+            ? finishUrl.trim()
+            : `gogama://payment-result?order_id=${orderId}`;
+        parameter.callbacks = { finish };
     }
     try {
         const transaction = await snap.createTransaction(parameter);

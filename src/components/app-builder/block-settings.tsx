@@ -614,14 +614,30 @@ function ContentSettings({ block, onChange, data }: { block: HomeBlock; onChange
       body = (
         <Section title="Gambar">
           <ImageField label="Gambar" value={c.imageUrl} onChange={(imageUrl) => set({ imageUrl })} />
-          <SliderField
-            label="Rasio (lebar ÷ tinggi)"
-            value={c.aspectRatio}
-            min={0.5}
-            max={4}
-            step={0.05}
-            onChange={(aspectRatio) => set({ aspectRatio })}
+          <SwitchField
+            label="Lebar Penuh Halaman"
+            hint="Gambar membentang penuh seperti banner (abaikan padding samping)."
+            checked={c.fullWidth}
+            onChange={(fullWidth) => set({ fullWidth })}
           />
+          <SliderField
+            label="Tinggi (px)"
+            hint="0 = otomatis mengikuti Rasio. > 0 = tinggi tetap seperti banner."
+            value={c.height}
+            min={0}
+            max={500}
+            onChange={(height) => set({ height })}
+          />
+          {(!c.height || c.height <= 0) && (
+            <SliderField
+              label="Rasio (lebar ÷ tinggi)"
+              value={c.aspectRatio}
+              min={0.5}
+              max={4}
+              step={0.05}
+              onChange={(aspectRatio) => set({ aspectRatio })}
+            />
+          )}
           <SliderField label="Radius" value={c.radius} min={0} max={40} onChange={(radius) => set({ radius })} />
           <SelectField
             label="BoxFit"

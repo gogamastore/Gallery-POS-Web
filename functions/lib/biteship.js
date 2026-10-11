@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.biteshipWebhook = exports.trackBiteshipOrder = exports.createBiteshipOrder = exports.getBiteshipRates = exports.searchBiteshipArea = void 0;
+exports.biteshipWebhook = exports.trackBiteshipOrder = exports.createBiteshipOrder = exports.getBiteshipCouriers = exports.getBiteshipRates = exports.searchBiteshipArea = void 0;
 const https_1 = require("firebase-functions/v2/https");
 const firestore_1 = require("firebase-admin/firestore");
 const v2_1 = require("firebase-functions/v2");
@@ -124,17 +124,42 @@ exports.getBiteshipRates = (0, https_1.onCall)({
     if (!destinationAreaId || !items?.length) {
         throw new https_1.HttpsError("invalid-argument", "destinationAreaId dan items wajib diisi.");
     }
-    // Kurir reguler + instan sekaligus
-    // Kurir instan hanya akan muncul jika koordinat destination tersedia
+    // Konfigurasi kurir aktif yang diatur admin (settings/shipping_couriers).
+    // Key = `<courierCode>:<serviceCode>`, nilai false = nonaktif. Difilter di
+    // server agar hasil tidak tergantung timing pemuatan di klien.
+    let serviceConfig = null;
+    try {
+        const cfgSnap = await db.doc("settings/shipping_couriers").get();
+        const raw = cfgSnap.exists ? cfgSnap.data()?.services : undefined;
+        if (raw && typeof raw === "object" && Object.keys(raw).length)
+            serviceConfig = raw;
+    }
+    catch (e) {
+        v2_1.logger.warn("Gagal membaca settings/shipping_couriers:", e?.message);
+    }
+    // Kurir reguler + instan sekaligus (fallback bila admin belum mengatur).
+    const fallbackCouriers = [
+        // Reguler
+        "jne", "jnt", "sicepat", "anteraja", "pos", "tiki", "ninja",
+        "lion", "wahana", "idexpress", "sentralcargo",
+        // Instan (muncul jika koordinat tersedia)
+        "gojek", "grab", "paxel", "lalamove", "borzo",
+    ];
+    // Kurir yang diminta ke Biteship: eksplisit dari client > kurir aktif di
+    // konfigurasi admin > fallback.
+    const enabledCourierCodes = serviceConfig
+        ? Array.from(new Set(Object.entries(serviceConfig)
+            .filter(([, v]) => v !== false)
+            .map(([k]) => k.split(":")[0])))
+        : null;
+    // Semua layanan dinonaktifkan admin → tidak ada tarif.
+    if (serviceConfig && (!enabledCourierCodes || enabledCourierCodes.length === 0)) {
+        v2_1.logger.info("getBiteshipRates: semua kurir dinonaktifkan admin.");
+        return { rates: [] };
+    }
     const defaultCouriers = couriers?.length
         ? couriers
-        : [
-            // Reguler
-            "jne", "jnt", "sicepat", "anteraja", "pos", "tiki", "ninja",
-            "lion", "wahana", "idexpress", "sentralcargo",
-            // Instan (muncul jika koordinat tersedia)
-            "gojek", "grab", "paxel", "lalamove", "borzo",
-        ];
+        : enabledCourierCodes ?? fallbackCouriers;
     // Koordinat origin toko
     const originLat = parseFloat(BITESHIP_ORIGIN_LATITUDE.value() || "0");
     const originLng = parseFloat(BITESHIP_ORIGIN_LONGITUDE.value() || "0");
@@ -226,13 +251,48 @@ exports.getBiteshipRates = (0, https_1.onCall)({
                 return catDiff;
             return a.price - b.price;
         });
-        v2_1.logger.info(`Biteship rates: ${rates.length} layanan (koordinat: ${hasOriginCoords && hasDestCoords})`);
-        return { rates };
+        // Saring ke layanan yang DIAKTIFKAN admin (per courier_service_code).
+        // Kunci = `<courier_code>:<courier_service_code>` (sama dgn /v1/couriers).
+        const visibleRates = serviceConfig
+            ? rates.filter((r) => serviceConfig[`${r.courierId}:${r.courierServiceCode}`] !== false)
+            : rates;
+        v2_1.logger.info(`Biteship rates: ${visibleRates.length}/${rates.length} layanan ` +
+            `(filter admin: ${!!serviceConfig}, koordinat: ${hasOriginCoords && hasDestCoords})`);
+        return { rates: visibleRates };
     }
     catch (err) {
         const errData = err?.response?.data;
         v2_1.logger.error("getBiteshipRates error:", errData ?? err.message);
         throw new https_1.HttpsError("internal", errData?.error ?? "Gagal mengambil tarif kurir.");
+    }
+});
+// ─────────────────────────────────────────────────────────────────
+// FUNCTION 2b: Daftar kurir yang AKTIF di akun Biteship (GET /v1/couriers)
+// Hanya kurir/layanan yang diaktifkan admin di dashboard Biteship yang
+// dikembalikan. Dipakai halaman Pengaturan Pengiriman untuk toggle layanan.
+// ─────────────────────────────────────────────────────────────────
+exports.getBiteshipCouriers = (0, https_1.onCall)({ region: "asia-southeast1", secrets: [BITESHIP_API_KEY] }, async (request) => {
+    if (!request.auth)
+        throw new https_1.HttpsError("unauthenticated", "Login diperlukan.");
+    try {
+        const api = biteshipApi();
+        const resp = await api.get("/v1/couriers");
+        const couriers = (resp.data.couriers ?? []).map((c) => ({
+            courierCode: c.courier_code ?? "",
+            courierName: c.courier_name ?? "",
+            serviceCode: c.courier_service_code ?? "",
+            serviceName: c.courier_service_name ?? "",
+            serviceType: c.service_type ?? "",
+            shippingType: c.shipping_type ?? "",
+            description: c.description ?? "",
+        }));
+        v2_1.logger.info(`getBiteshipCouriers: ${couriers.length} layanan aktif di akun Biteship.`);
+        return { couriers };
+    }
+    catch (err) {
+        const errData = err?.response?.data;
+        v2_1.logger.error("getBiteshipCouriers error:", errData ?? err.message);
+        throw new https_1.HttpsError("internal", errData?.error ?? "Gagal mengambil daftar kurir Biteship.");
     }
 });
 // ─────────────────────────────────────────────────────────────────

@@ -17,6 +17,8 @@ import {
   Percent,
   MapPin,
   MessageSquare,
+  Truck,
+  CreditCard,
   Bell,
   SquarePen,
 } from "lucide-react";
@@ -41,6 +43,7 @@ const reportsSubMenu = [
   { href: "/dashboard/reports/sales", label: "Penjualan" },
   { href: "/dashboard/reports/revenue", label: "Pendapatan" },
   { href: "/dashboard/reports/cashdrawer", label: "Cashdrawer" },
+  { href: "/dashboard/reports/admin-fees", label: "Admin & Layanan" },
   { href: "/dashboard/reports/product-sales", label: "Penjualan Produk" },
   { href: "/dashboard/reports/purchases", label: "Pembelian" },
   { href: "/dashboard/reports/operational-expenses", label: "Beban Operasional" },
@@ -88,6 +91,18 @@ const settingsSubMenu = [
     icon: Bell,
     highlight: true,
   },
+  {
+    href: "/dashboard/settings/shipping-couriers",
+    label: "Pengiriman",
+    icon: Truck,
+    highlight: true,
+  },
+  {
+    href: "/dashboard/settings/payment-methods",
+    label: "Pembayaran",
+    icon: CreditCard,
+    highlight: true,
+  },
   { href: "/dashboard/settings/bank-accounts", label: "Rekening Bank" },
   { href: "/dashboard/settings/staff", label: "Manajemen Staf" },
   { href: "/dashboard/settings/contacts", label: "Daftar Kontak" },
@@ -95,7 +110,6 @@ const settingsSubMenu = [
   { href: "/dashboard/settings/product-categories", label: "Kategori Produk" },
   { href: "/dashboard/settings/brands", label: "Manajemen Brand" },
   { href: "/dashboard/settings/promo", label: "Promo" },
-  { href: "/dashboard/settings/design", label: "Desain" },
   { href: "/dashboard/settings/trending-products", label: "Produk Trending" },
 ];
 

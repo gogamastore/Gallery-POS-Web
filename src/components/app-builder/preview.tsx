@@ -885,10 +885,18 @@ function TextBlock({ block }: { block: HomeBlock<"text"> }) {
 function ImageBlock({ block }: { block: HomeBlock<"image"> }) {
   const c: ImageBlockConfig = block.config;
   if (!c.imageUrl) return <EmptyBlock block={block} message="unggah gambar terlebih dahulu." />;
+  const fixedHeight = typeof c.height === "number" && c.height > 0 ? c.height : null;
+  const sidePad = c.fullWidth ? 0 : block.style.paddingH;
   return (
     <Frame block={block}>
-      <div style={{ padding: `0 ${block.style.paddingH}px` }}>
-        <div className="overflow-hidden bg-gray-200" style={{ borderRadius: c.radius, aspectRatio: String(c.aspectRatio) }}>
+      <div style={{ padding: `0 ${sidePad}px` }}>
+        <div
+          className="w-full overflow-hidden bg-gray-200"
+          style={{
+            borderRadius: c.radius,
+            ...(fixedHeight ? { height: fixedHeight } : { aspectRatio: String(c.aspectRatio) }),
+          }}
+        >
           <img src={c.imageUrl} alt="" className="h-full w-full" style={{ objectFit: c.fit }} />
         </div>
       </div>

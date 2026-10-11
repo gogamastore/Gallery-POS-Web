@@ -22,6 +22,8 @@ import {
   Ticket,
   Receipt,
   Smartphone,
+  Truck,
+  CreditCard,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -123,6 +125,20 @@ const settingsCards = [
     description: "Atur biaya admin (flat) & biaya layanan (persen + batas) di checkout.",
     icon: Receipt,
     href: "/dashboard/settings/admin-fees",
+  },
+  {
+    title: "Pengaturan Pengiriman",
+    description: "Aktifkan layanan kurir Biteship (diambil dari akun Biteship) yang muncul di checkout.",
+    icon: Truck,
+    href: "/dashboard/settings/shipping-couriers",
+    highlight: true,
+  },
+  {
+    title: "Pengaturan Pembayaran",
+    description: "Aktifkan metode Midtrans (Transfer Bank / E-wallet / QRIS) & atur biaya layanan tiap metode.",
+    icon: CreditCard,
+    href: "/dashboard/settings/payment-methods",
+    highlight: true,
   },
 ];
 

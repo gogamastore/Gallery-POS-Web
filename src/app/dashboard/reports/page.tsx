@@ -37,6 +37,12 @@ const reportCards = [
     href: "/dashboard/reports/cashdrawer",
   },
   {
+    title: "Laporan Biaya Admin & Layanan",
+    description: "Biaya admin, layanan & layanan pembayaran dari pembeli marketplace.",
+    icon: Receipt,
+    href: "/dashboard/reports/admin-fees",
+  },
+  {
     title: "Laporan Transaksi Pembelian",
     description: "Lacak semua transaksi pembelian stok.",
     icon: FileText,

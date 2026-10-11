@@ -365,6 +365,35 @@ function ProductsBlock({ block }: { block: HomeBlock<"products"> }) {
     );
   }
 
+  // Dua/Tiga/Empat Kolom → gulir HORIZONTAL (bukan grid), meniru aplikasi.
+  // Kartu disusun kolom-mayor: tiap kolom berisi `rows` kartu; kolom digeser ke
+  // samping. Lebar kolom dibuat agar `cols` kolom muat + sedikit kolom berikut
+  // mengintip (cols + 0.2), persis seperti layout horizontal di Flutter.
+  if (cfg.layout === "twoColumn" || cfg.layout === "threeColumn" || cfg.layout === "fourColumn") {
+    const cols = cfg.layout === "twoColumn" ? 2 : cfg.layout === "threeColumn" ? 3 : 4;
+    const rows = clamp(cfg.rows || 1, 1, 3);
+    const gap = cfg.spacing || 8;
+    const columns: PreviewProduct[][] = [];
+    for (let j = 0; j * rows < list.length; j++) columns.push(list.slice(j * rows, j * rows + rows));
+    return (
+      <Frame block={block} seeAllHref={productSeeAllLink(cfg)}>
+        <div className="flex snap-x overflow-x-auto pb-1" style={{ padding: `0 ${pad}px`, gap, scrollbarWidth: "none" }}>
+          {columns.map((col, j) => (
+            <div
+              key={j}
+              className="flex shrink-0 snap-start flex-col"
+              style={{ width: `calc((100% - ${gap * cols}px) / ${cols + 0.2})`, gap }}
+            >
+              {col.map((p) => (
+                <ProductCard key={p.id} p={p} style={cfg.card} />
+              ))}
+            </div>
+          ))}
+        </div>
+      </Frame>
+    );
+  }
+
   const masonry = cfg.layout === "staggered" || cfg.layout === "quilted";
   return (
     <Frame block={block} seeAllHref={productSeeAllLink(cfg)}>
@@ -609,14 +638,24 @@ function TextBlock({ block }: { block: HomeBlock<"text"> }) {
 function ImageBlock({ block }: { block: HomeBlock<"image"> }) {
   const c: ImageBlockConfig = block.config;
   if (!c.imageUrl) return null;
+  // Tinggi: px tetap (seperti banner) bila > 0, selain itu ikut rasio.
+  const fixedHeight = typeof c.height === "number" && c.height > 0 ? c.height : null;
   const img = (
-    <div className="overflow-hidden bg-gray-200" style={{ borderRadius: c.radius, aspectRatio: String(c.aspectRatio) }}>
+    <div
+      className="w-full overflow-hidden bg-gray-200"
+      style={{
+        borderRadius: c.radius,
+        ...(fixedHeight ? { height: fixedHeight } : { aspectRatio: String(c.aspectRatio) }),
+      }}
+    >
       <img src={c.imageUrl} alt="" className="h-full w-full" style={{ objectFit: c.fit }} />
     </div>
   );
+  // Lebar penuh halaman → abaikan padding samping (seperti banner full-bleed).
+  const sidePad = c.fullWidth ? 0 : block.style.paddingH;
   return (
     <Frame block={block}>
-      <div style={{ padding: `0 ${block.style.paddingH}px` }}>
+      <div style={{ padding: `0 ${sidePad}px` }}>
         {c.link ? (
           <Link href={resolveLink(c.link)}>{img}</Link>
         ) : (

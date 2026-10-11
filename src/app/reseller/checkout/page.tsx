@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
@@ -37,18 +37,28 @@ import {
   Loader2,
   Package,
   ArrowLeft,
-  Search,
   CheckCircle,
   RefreshCw,
-  CreditCard,
   Banknote,
   MapPin,
   Truck,
   X,
   Ticket,
   ChevronRight,
+  Landmark,
+  Wallet,
+  QrCode,
 } from "lucide-react";
 import Link from "next/link";
+import {
+  PAYMENT_CHANNELS,
+  categoryFee,
+  isChannelEnabled,
+  normalizePaymentConfig,
+  type PaymentCategory,
+  type PaymentChannel,
+  type PaymentMethodsConfig,
+} from "@/lib/payment-channels";
 import {
   Select,
   SelectContent,
@@ -173,10 +183,55 @@ const getBiteshipRatesFn = httpsCallable<{
   items: { productId: string; name: string; price: number; quantity: number; weightGram: number }[];
   destinationLatitude?: number;
   destinationLongitude?: number;
+  couriers?: string[];
 }, { rates: BiteshipRate[] }>(functions, "getBiteshipRates");
-const createMidtransTransactionFn = httpsCallable<{ orderId: string }, { token: string; redirectUrl: string }>(functions, "createMidtransTransaction");
+const createMidtransTransactionFn = httpsCallable<{ orderId: string; finishUrl?: string }, { token: string; redirectUrl: string }>(functions, "createMidtransTransaction");
 
 // ── Helpers ────────────────────────────────────────────────────────
+
+/** Kartu kategori metode pembayaran di checkout (Transfer Bank / E-wallet / QRIS). */
+function PaymentCategoryCard({
+  label,
+  hint,
+  Icon,
+  feeLabel,
+  selected,
+  selectedName,
+  onClick,
+}: {
+  label: string;
+  hint: string;
+  Icon: React.ComponentType<{ className?: string }>;
+  feeLabel: string;
+  selected: boolean;
+  selectedName?: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "w-full flex items-center gap-4 p-4 rounded-lg border-2 transition-colors text-left",
+        selected ? "border-primary bg-primary/5" : "border-muted hover:border-muted-foreground/30",
+      )}
+    >
+      <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+        <Icon className="h-5 w-5 text-primary" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="font-semibold">{label}</p>
+        <p className="truncate text-xs text-muted-foreground">
+          {selected && selectedName ? `Dipilih: ${selectedName}` : hint}
+        </p>
+      </div>
+      <div className="flex flex-col items-end gap-1 shrink-0">
+        <Badge variant="outline" className="text-[11px]">{feeLabel}</Badge>
+        {selected && <CheckCircle className="h-5 w-5 text-primary" />}
+      </div>
+    </button>
+  );
+}
 
 function groupRatesByCategory(rates: BiteshipRate[]) {
   const order = ["same_day", "next_day", "reguler", "cargo"];
@@ -225,13 +280,9 @@ export default function CheckoutPage() {
   // ── Koordinat GPS (dari alamat tersimpan, untuk GoSend/Grab/Paxel) ──
   const [addressCoords, setAddressCoords] = useState<{ lat: number; lng: number } | null>(null);
 
-  // ── Biteship area search ──────────────────────────────────────────
-  const [areaQuery, setAreaQuery] = useState("");
-  const [areaResults, setAreaResults] = useState<BiteshipArea[]>([]);
+  // ── Biteship area (diambil otomatis dari alamat pelanggan) ──────────
   const [isSearchingArea, setIsSearchingArea] = useState(false);
-  const [showAreaDropdown, setShowAreaDropdown] = useState(false);
   const [selectedArea, setSelectedArea] = useState<BiteshipArea | null>(null);
-  const areaSearchRef = useRef<HTMLDivElement>(null);
 
   // ── Biteship rates ────────────────────────────────────────────────
   const [biteshipRates, setBiteshipRates] = useState<BiteshipRate[]>([]);
@@ -240,7 +291,13 @@ export default function CheckoutPage() {
   const [selectedRate, setSelectedRate] = useState<BiteshipRate | null>(null);
 
   // ── Payment ───────────────────────────────────────────────────────
+  // "midtrans" = pembayaran online (channel dipilih di `selectedChannel`),
+  // "cod" = bayar di tempat (khusus Ambil di Toko).
   const [paymentMethod, setPaymentMethod] = useState<"midtrans" | "cod">("midtrans");
+  const [paymentConfig, setPaymentConfig] = useState<PaymentMethodsConfig | null>(null);
+  const [selectedChannel, setSelectedChannel] = useState<PaymentChannel | null>(null);
+  const [bankDialogOpen, setBankDialogOpen] = useState(false);
+  const [ewalletDialogOpen, setEwalletDialogOpen] = useState(false);
 
   // ── Voucher ───────────────────────────────────────────────────────
   const [vouchers, setVouchers] = useState<VoucherItem[]>([]);
@@ -296,10 +353,23 @@ export default function CheckoutPage() {
     return f;
   }, [adminFeeConfig, totalAmount]);
 
+  // Biaya layanan pembayaran (per kategori) — hanya untuk pembayaran online.
+  const paymentFee = useMemo(() => {
+    if (paymentMethod !== "midtrans" || !selectedChannel) return 0;
+    return categoryFee(paymentConfig, selectedChannel.category);
+  }, [paymentMethod, selectedChannel, paymentConfig]);
+
   const grandTotal = useMemo(
-    () => Math.max(0, totalAmount + shippingFee - voucherDiscount + adminFee + serviceFee),
-    [totalAmount, shippingFee, voucherDiscount, adminFee, serviceFee]
+    () => Math.max(0, totalAmount + shippingFee - voucherDiscount + adminFee + serviceFee + paymentFee),
+    [totalAmount, shippingFee, voucherDiscount, adminFee, serviceFee, paymentFee]
   );
+
+  // Channel pembayaran yang diaktifkan admin, dikelompokkan per kategori.
+  const enabledByCategory = useMemo(() => {
+    const pick = (cat: PaymentCategory) =>
+      PAYMENT_CHANNELS.filter((c) => c.category === cat && isChannelEnabled(paymentConfig, c));
+    return { bank: pick("bank"), ewallet: pick("ewallet"), qris: pick("qris") };
+  }, [paymentConfig]);
 
   // Muat konfigurasi biaya admin & layanan.
   useEffect(() => {
@@ -319,6 +389,13 @@ export default function CheckoutPage() {
         // diamkan — biaya opsional
       }
     })();
+  }, []);
+
+  // Muat konfigurasi metode pembayaran (channel aktif + biaya layanan).
+  useEffect(() => {
+    getDoc(doc(db, "settings", "payment_methods"))
+      .then((snap) => setPaymentConfig(normalizePaymentConfig(snap.exists() ? snap.data() : null)))
+      .catch(() => setPaymentConfig(normalizePaymentConfig(null)));
   }, []);
 
   // Muat voucher AKTIF untuk dipilih di checkout.
@@ -448,17 +525,6 @@ export default function CheckoutPage() {
     }
   }, [cart, authLoading, router, toast]);
 
-  // Close area dropdown when clicking outside
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (areaSearchRef.current && !areaSearchRef.current.contains(e.target as Node)) {
-        setShowAreaDropdown(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
   // Auto reset payment method when switching delivery type
   useEffect(() => {
     if (deliveryType === "courier" && paymentMethod === "cod") {
@@ -499,7 +565,6 @@ export default function CheckoutPage() {
         adminName: addr.province,
       };
       setSelectedArea(area);
-      setAreaQuery(area.name);
       await fetchRates(area.id, coords ?? undefined);
       return;
     }
@@ -530,7 +595,6 @@ export default function CheckoutPage() {
         if (res.data.areas?.length) {
           const area = res.data.areas[0];
           setSelectedArea(area);
-          setAreaQuery(area.name);
           await fetchRates(area.id, coords);
           return;
         }
@@ -560,6 +624,9 @@ export default function CheckoutPage() {
         quantity: item.quantity,
         weightGram: itemWeightGram(item.weightGram),
       }));
+      // Penyaringan kurir sesuai Pengaturan Pengiriman admin dilakukan di
+      // sisi server (getBiteshipRates membaca settings/shipping_couriers),
+      // agar tak terpengaruh timing pemuatan di klien.
       const payload: Parameters<typeof getBiteshipRatesFn>[0] = {
         destinationAreaId: areaId,
         items,
@@ -575,53 +642,12 @@ export default function CheckoutPage() {
     }
   }, [cart]);
 
-  // ── Area search with debounce ────────────────────────────────────
-
-  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  async function handleAreaQueryChange(value: string) {
-    setAreaQuery(value);
-    setSelectedArea(null);
-    setAreaResults([]);
-    setBiteshipRates([]);
-    setSelectedRate(null);
-    setRatesError(null);
-
-    if (value.length < 3) {
-      setShowAreaDropdown(false);
-      return;
-    }
-    if (searchTimer.current) clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(async () => {
-      setIsSearchingArea(true);
-      setShowAreaDropdown(true);
-      try {
-        const res = await searchBiteshipAreaFn({ input: value });
-        setAreaResults(res.data.areas || []);
-      } catch {
-        setAreaResults([]);
-      } finally {
-        setIsSearchingArea(false);
-      }
-    }, 500);
-  }
-
-  function handleAreaSelect(area: BiteshipArea) {
-    setSelectedArea(area);
-    setAreaQuery(area.name);
-    setShowAreaDropdown(false);
-    setAreaResults([]);
-    // Kirim koordinat tersimpan jika ada (dari alamat yang sedang aktif)
-    fetchRates(area.id, addressCoords ?? undefined);
-  }
-
   function handleAddressSelect(addressId: string) {
     const addr = userAddresses.find((a) => a.id === addressId);
     if (!addr) return;
     setSelectedAddressId(addressId);
     applyAddress(addr);
     setSelectedArea(null);
-    setAreaQuery("");
     setBiteshipRates([]);
     setSelectedRate(null);
     setRatesError(null);
@@ -641,6 +667,10 @@ export default function CheckoutPage() {
     }
     if (deliveryType === "courier" && !selectedArea) {
       toast({ title: "Pilih area tujuan", description: "Cari dan pilih kota/kecamatan tujuan.", variant: "destructive" });
+      return;
+    }
+    if (paymentMethod === "midtrans" && !selectedChannel) {
+      toast({ title: "Pilih metode pembayaran", description: "Pilih Transfer Bank, E-wallet, atau QRIS.", variant: "destructive" });
       return;
     }
 
@@ -678,6 +708,13 @@ export default function CheckoutPage() {
         total: grandTotal,
         shippingMethod: shippingMethodName,
         paymentMethod,
+        // Channel Midtrans terpilih (dipakai fungsi createMidtransTransaction
+        // untuk membatasi enabled_payments ke 1 channel → tanpa layar pilih
+        // metode di Snap). Kosong untuk COD.
+        paymentChannelCode: paymentMethod === "midtrans" ? selectedChannel?.code ?? null : null,
+        paymentChannelName: paymentMethod === "midtrans" ? selectedChannel?.name ?? null : null,
+        paymentCategory: paymentMethod === "midtrans" ? selectedChannel?.category ?? null : null,
+        paymentFee,
         voucherCode: selectedVoucher?.code || null,
         voucherDiscount,
         adminFee,
@@ -762,8 +799,12 @@ export default function CheckoutPage() {
         return;
       }
 
-      // Midtrans → buat token + buka Snap
-      const txResult = await createMidtransTransactionFn({ orderId: orderRef.id });
+      // Midtrans → buat token + buka Snap. Kirim finishUrl (URL web) agar
+      // e-wallet seperti ShopeePay/GoPay yang membuka aplikasi bisa kembali ke
+      // browser setelah bayar (bukan deeplink aplikasi `gogama://`).
+      const finishUrl =
+        typeof window !== "undefined" ? `${window.location.origin}/reseller/orders` : undefined;
+      const txResult = await createMidtransTransactionFn({ orderId: orderRef.id, finishUrl });
       const { token, redirectUrl } = txResult.data;
 
       clearCart();
@@ -946,54 +987,20 @@ export default function CheckoutPage() {
               {/* Biteship area search + rates (hanya jika kurir) */}
               {deliveryType === "courier" && (
                 <div className="space-y-4 pt-2 border-t">
-                  <div className="space-y-2" ref={areaSearchRef}>
+                  {/* Tujuan pengiriman — diambil otomatis dari alamat pelanggan
+                      (tidak bisa diubah manual di sini). */}
+                  <div className="space-y-2">
                     <Label className="flex items-center gap-2">
                       <MapPin className="h-4 w-4" />
-                      Cari Kota / Kecamatan Tujuan
+                      Tujuan Pengiriman
                     </Label>
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        value={areaQuery}
-                        onChange={(e) => handleAreaQueryChange(e.target.value)}
-                        onFocus={() => areaResults.length > 0 && setShowAreaDropdown(true)}
-                        placeholder="Contoh: Jakarta Selatan, Bandung, Surabaya..."
-                        className="pl-9 pr-9"
-                      />
-                      {(isSearchingArea) && (
-                        <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
-                      )}
-                      {selectedArea && (
-                        <button
-                          type="button"
-                          onClick={() => { setSelectedArea(null); setAreaQuery(""); setBiteshipRates([]); setSelectedRate(null); }}
-                          className="absolute right-3 top-1/2 -translate-y-1/2"
-                        >
-                          <X className="h-4 w-4 text-muted-foreground hover:text-foreground" />
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Dropdown hasil pencarian */}
-                    {showAreaDropdown && areaResults.length > 0 && (
-                      <div className="absolute z-50 w-full max-w-lg mt-1 bg-card border rounded-md shadow-lg max-h-56 overflow-y-auto">
-                        {areaResults.map((area) => (
-                          <button
-                            key={area.id}
-                            type="button"
-                            onMouseDown={() => handleAreaSelect(area)}
-                            className="w-full text-left px-4 py-3 hover:bg-muted transition-colors border-b last:border-b-0"
-                          >
-                            <p className="font-medium text-sm">{area.name}</p>
-                            {area.adminName && <p className="text-xs text-muted-foreground">{area.adminName}</p>}
-                          </button>
-                        ))}
+                    {isSearchingArea ? (
+                      <div className="flex items-center gap-2 rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Menentukan area tujuan dari alamat…
                       </div>
-                    )}
-
-                    {/* Area terpilih */}
-                    {selectedArea && (
-                      <div className="space-y-1">
+                    ) : selectedArea ? (
+                      <div className="space-y-1 rounded-lg border bg-muted/30 p-3">
                         <div className="flex items-center gap-2 text-sm text-green-700 dark:text-green-400">
                           <CheckCircle className="h-4 w-4 shrink-0" />
                           <span>Tujuan: <strong>{selectedArea.name}</strong>{selectedArea.adminName ? `, ${selectedArea.adminName}` : ""}</span>
@@ -1007,6 +1014,11 @@ export default function CheckoutPage() {
                             Tanpa GPS — layanan instan (GoSend/Grab) tidak tersedia. Tambahkan lokasi peta di profil alamat.
                           </p>
                         )}
+                      </div>
+                    ) : (
+                      <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+                        Area tujuan belum terdeteksi dari alamatmu. Pastikan kota/kecamatan sudah benar di{" "}
+                        <Link href="/reseller/profile/address" className="underline">profil alamat</Link>.
                       </div>
                     )}
                   </div>
@@ -1106,38 +1118,66 @@ export default function CheckoutPage() {
           <Card>
             <CardHeader><CardTitle>3. Metode Pembayaran</CardTitle></CardHeader>
             <CardContent className="space-y-3">
-              {/* Midtrans */}
-              <button
-                type="button"
-                onClick={() => setPaymentMethod("midtrans")}
-                className={cn(
-                  "w-full flex items-center gap-4 p-4 rounded-lg border-2 transition-colors text-left",
-                  paymentMethod === "midtrans" ? "border-blue-500 bg-blue-50 dark:bg-blue-950/20" : "border-muted hover:border-muted-foreground/30"
-                )}
-              >
-                <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center shrink-0">
-                  <CreditCard className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                </div>
-                <div className="flex-1">
-                  <p className="font-semibold">Bayar via Midtrans</p>
-                  <p className="text-xs text-muted-foreground">GoPay · ShopeePay · QRIS · BCA/BNI/BRI VA · Indomaret · Alfamart · Kartu Kredit</p>
-                </div>
-                {paymentMethod === "midtrans" && <CheckCircle className="h-5 w-5 text-blue-500 shrink-0" />}
-              </button>
-
-              {paymentMethod === "midtrans" && (
-                <div className="flex flex-wrap gap-1.5 pl-4">
-                  {["GoPay", "ShopeePay", "QRIS", "BCA VA", "BNI VA", "BRI VA", "Mandiri", "Indomaret", "Alfamart", "Kartu Kredit"].map((m) => (
-                    <Badge key={m} variant="outline" className="text-xs">{m}</Badge>
-                  ))}
-                </div>
+              {/* Transfer Bank */}
+              {enabledByCategory.bank.length > 0 && (
+                <PaymentCategoryCard
+                  label="Transfer Bank"
+                  hint="Virtual Account — pilih bank"
+                  Icon={Landmark}
+                  feeLabel={categoryFee(paymentConfig, "bank") > 0 ? formatCurrency(categoryFee(paymentConfig, "bank")) : "Gratis Fee"}
+                  selected={paymentMethod === "midtrans" && selectedChannel?.category === "bank"}
+                  selectedName={selectedChannel?.category === "bank" ? selectedChannel?.name : undefined}
+                  onClick={() => setBankDialogOpen(true)}
+                />
               )}
+
+              {/* E-wallet */}
+              {enabledByCategory.ewallet.length > 0 && (
+                <PaymentCategoryCard
+                  label="E-wallet"
+                  hint="GoPay, ShopeePay, OVO — pilih dompet"
+                  Icon={Wallet}
+                  feeLabel={categoryFee(paymentConfig, "ewallet") > 0 ? formatCurrency(categoryFee(paymentConfig, "ewallet")) : "Gratis Fee"}
+                  selected={paymentMethod === "midtrans" && selectedChannel?.category === "ewallet"}
+                  selectedName={selectedChannel?.category === "ewallet" ? selectedChannel?.name : undefined}
+                  onClick={() => setEwalletDialogOpen(true)}
+                />
+              )}
+
+              {/* QRIS */}
+              {enabledByCategory.qris.length > 0 && (
+                <PaymentCategoryCard
+                  label="QRIS"
+                  hint="Scan QR dari semua aplikasi pembayaran"
+                  Icon={QrCode}
+                  feeLabel={categoryFee(paymentConfig, "qris") > 0 ? formatCurrency(categoryFee(paymentConfig, "qris")) : "Gratis Fee"}
+                  selected={paymentMethod === "midtrans" && selectedChannel?.category === "qris"}
+                  onClick={() => {
+                    const q = enabledByCategory.qris[0];
+                    if (q) {
+                      setSelectedChannel(q);
+                      setPaymentMethod("midtrans");
+                    }
+                  }}
+                />
+              )}
+
+              {enabledByCategory.bank.length === 0 &&
+                enabledByCategory.ewallet.length === 0 &&
+                enabledByCategory.qris.length === 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    Belum ada metode pembayaran online yang diaktifkan admin.
+                  </p>
+                )}
 
               {/* COD — hanya untuk Ambil di Toko */}
               {deliveryType === "pickup" && (
                 <button
                   type="button"
-                  onClick={() => setPaymentMethod("cod")}
+                  onClick={() => {
+                    setPaymentMethod("cod");
+                    setSelectedChannel(null);
+                  }}
                   className={cn(
                     "w-full flex items-center gap-4 p-4 rounded-lg border-2 transition-colors text-left",
                     paymentMethod === "cod" ? "border-green-500 bg-green-50 dark:bg-green-950/20" : "border-muted hover:border-muted-foreground/30"
@@ -1262,6 +1302,75 @@ export default function CheckoutPage() {
             </DialogContent>
           </Dialog>
 
+          {/* Dialog pilih Bank (Transfer Bank) */}
+          <Dialog open={bankDialogOpen} onOpenChange={setBankDialogOpen}>
+            <DialogContent className="sm:max-w-md max-h-[80vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Pilih Bank</DialogTitle>
+                <DialogDescription>Transfer via Virtual Account bank pilihanmu.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-2">
+                {enabledByCategory.bank.map((ch) => (
+                  <button
+                    key={ch.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedChannel(ch);
+                      setPaymentMethod("midtrans");
+                      setBankDialogOpen(false);
+                    }}
+                    className={cn(
+                      "w-full flex items-center justify-between gap-3 rounded-lg border-2 p-3 text-left transition-colors",
+                      selectedChannel?.id === ch.id ? "border-primary bg-primary/5" : "border-muted hover:border-muted-foreground/30",
+                    )}
+                  >
+                    <span className="flex items-center gap-3">
+                      <Landmark className="h-5 w-5 text-primary" />
+                      <span className="font-medium">{ch.name}</span>
+                    </span>
+                    {selectedChannel?.id === ch.id && <CheckCircle className="h-5 w-5 text-primary" />}
+                  </button>
+                ))}
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* Dialog pilih E-wallet */}
+          <Dialog open={ewalletDialogOpen} onOpenChange={setEwalletDialogOpen}>
+            <DialogContent className="sm:max-w-md max-h-[80vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Pilih E-wallet</DialogTitle>
+                <DialogDescription>Bayar dengan dompet digital pilihanmu.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-2">
+                {enabledByCategory.ewallet.map((ch) => (
+                  <button
+                    key={ch.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedChannel(ch);
+                      setPaymentMethod("midtrans");
+                      setEwalletDialogOpen(false);
+                    }}
+                    className={cn(
+                      "w-full flex items-center justify-between gap-3 rounded-lg border-2 p-3 text-left transition-colors",
+                      selectedChannel?.id === ch.id ? "border-primary bg-primary/5" : "border-muted hover:border-muted-foreground/30",
+                    )}
+                  >
+                    <span className="flex items-center gap-3">
+                      <Wallet className="h-5 w-5 text-primary" />
+                      <span className="font-medium">{ch.name}</span>
+                      {ch.id === "ovo" && (
+                        <span className="text-[11px] text-amber-600">via QRIS</span>
+                      )}
+                    </span>
+                    {selectedChannel?.id === ch.id && <CheckCircle className="h-5 w-5 text-primary" />}
+                  </button>
+                ))}
+              </div>
+            </DialogContent>
+          </Dialog>
+
           {/* Ringkasan Pesanan (mobile) — sama seperti aplikasi Flutter */}
           <Card className="lg:hidden">
             <CardHeader><CardTitle>Ringkasan Pesanan</CardTitle></CardHeader>
@@ -1316,6 +1425,12 @@ export default function CheckoutPage() {
                   <div className="flex justify-between text-sm">
                     <span>Biaya Layanan</span>
                     <span>{formatCurrency(serviceFee)}</span>
+                  </div>
+                )}
+                {paymentMethod === "midtrans" && selectedChannel && (
+                  <div className="flex justify-between text-sm">
+                    <span>Biaya Layanan Pembayaran</span>
+                    <span>{paymentFee > 0 ? formatCurrency(paymentFee) : "Gratis Fee"}</span>
                   </div>
                 )}
                 <div className="flex justify-between font-bold text-lg pt-2 border-t">
@@ -1384,6 +1499,12 @@ export default function CheckoutPage() {
                   <div className="flex justify-between text-sm">
                     <span>Biaya Layanan</span>
                     <span>{formatCurrency(serviceFee)}</span>
+                  </div>
+                )}
+                {paymentMethod === "midtrans" && selectedChannel && (
+                  <div className="flex justify-between text-sm">
+                    <span>Biaya Layanan Pembayaran</span>
+                    <span>{paymentFee > 0 ? formatCurrency(paymentFee) : "Gratis Fee"}</span>
                   </div>
                 )}
                 <div className="flex justify-between font-bold text-lg pt-2 border-t">

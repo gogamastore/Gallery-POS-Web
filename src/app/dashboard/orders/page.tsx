@@ -166,6 +166,9 @@ interface Order {
   status: string;
   paymentMethod: string;
   paymentStatus: string;
+  // Kanal penjualan: 'marketplace' (pesanan pembeli) atau 'pos' (transaksi
+  // kasir). Halaman ini hanya menampilkan pesanan marketplace.
+  source?: string;
   paymentProofUrl?: string;
   total: number;
   subtotal: number;
@@ -227,6 +230,7 @@ function fromFirestore(id: string, data: Record<string, any>): Order {
     status,
     paymentMethod: data.paymentMethod ?? "N/A",
     paymentStatus: data.paymentStatus ?? "unpaid",
+    source: data.source ?? "",
     paymentProofUrl: data.paymentProofUrl,
     total: toNum(data.total),
     subtotal: toNum(data.subtotal),
@@ -1165,7 +1169,11 @@ export default function OrdersPage() {
   // ── Filtering ─────────────────────────────────────────────────────
 
   const filteredOrders = useMemo(() => {
-    let base = allOrders;
+    // Hanya pesanan marketplace (pembeli). Transaksi kasir POS (source: 'pos',
+    // mis. QRIS "Belum Bayar") TIDAK ditampilkan di sini — sama seperti layar
+    // Pesanan di aplikasi POS-Gallery yang memfilter source == 'marketplace'.
+    // Pesanan lama tanpa field `source` tetap dianggap marketplace.
+    let base = allOrders.filter((o) => o.source !== "pos");
 
     if (dateRange?.from || dateRange?.to) {
       base = base.filter((o) => {

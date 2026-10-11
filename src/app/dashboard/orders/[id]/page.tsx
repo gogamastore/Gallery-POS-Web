@@ -102,6 +102,7 @@ interface Order {
   voucherDiscount?: number;
   adminFee?: number;
   serviceFee?: number;
+  paymentFee?: number;
   labelPrinted?: boolean;
   shippingMethod?: string;
   date: any;
@@ -162,6 +163,7 @@ function fromFirestore(docId: string, data: Record<string, any>): Order {
     voucherDiscount: toNum(data.voucherDiscount),
     adminFee: toNum(data.adminFee),
     serviceFee: toNum(data.serviceFee),
+    paymentFee: toNum(data.paymentFee),
     shippingMethod: data.shippingMethod ?? "",
     date: data.date,
     shippedAt: data.shippedAt,
@@ -983,6 +985,12 @@ export default function OrderDetailPage() {
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">Biaya Layanan</span>
               <span>{formatCurrency(order.serviceFee || 0)}</span>
+            </div>
+          )}
+          {(order.paymentFee ?? 0) > 0 && (
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Biaya Layanan Pembayaran</span>
+              <span>{formatCurrency(order.paymentFee || 0)}</span>
             </div>
           )}
           <Separator />

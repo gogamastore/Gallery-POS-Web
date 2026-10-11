@@ -154,6 +154,10 @@ export interface TextBlockConfig {
 export interface ImageBlockConfig {
   imageUrl: string;
   aspectRatio: number;
+  /** Tinggi tetap (px) seperti banner. 0 = otomatis dari rasio (aspectRatio). */
+  height: number;
+  /** true = gambar membentang penuh lebar halaman (abaikan padding samping). */
+  fullWidth: boolean;
   radius: number;
   link: string;
   fit: "cover" | "contain";
@@ -299,7 +303,7 @@ export const DEFAULT_CONFIGS: BlockConfigMap = {
     borderColor: "#E5E7EB",
   },
   text: { text: "", fontSize: 16, bold: true, align: "left", color: "#1F2937" },
-  image: { imageUrl: "", aspectRatio: 2, radius: 12, link: "", fit: "cover" },
+  image: { imageUrl: "", aspectRatio: 2, height: 0, fullWidth: true, radius: 12, link: "", fit: "cover" },
   spacer: { height: 16, showDivider: false, dividerColor: "#E5E7EB" },
   button: {
     label: "Lihat Semua Produk",
