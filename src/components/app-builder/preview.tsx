@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import {
   BLOCK_LABELS,
   CATEGORY_SLIDER_MAX,
+  orderParents,
   type AppDesign,
   type AppLayout,
   type BannerBlockConfig,
@@ -840,6 +841,89 @@ function CategoriesBlock({ block, data }: { block: HomeBlock<"categories">; data
   );
 }
 
+function ParentCategoriesBlock({ block, data }: { block: HomeBlock<"parentCategories">; data: PreviewData }) {
+  const t = useTheme();
+  const c = block.config;
+  const parents = orderParents(data.parents.filter((p) => p.name), c.order).slice(0, c.limit);
+  if (!parents.length) return <EmptyBlock block={block} message="belum ada induk kategori." />;
+
+  const avatar = (p: { id: string; name: string; imageUrl: string }, size: number) => (
+    <div className="flex flex-col items-center">
+      <div
+        className="flex items-center justify-center overflow-hidden rounded-full font-bold"
+        style={{ width: size, height: size, background: hexToRgba(t.primary, 0.12), color: t.primary, fontSize: size * 0.4 }}
+      >
+        {p.imageUrl ? (
+          <img src={p.imageUrl} alt="" className="h-full w-full object-contain" />
+        ) : (
+          p.name.charAt(0).toUpperCase()
+        )}
+      </div>
+      <span className="mt-1.5 line-clamp-2 text-center" style={{ fontSize: 11, lineHeight: 1.2 }}>
+        {p.name}
+      </span>
+    </div>
+  );
+  const pad = `0 ${block.style.paddingH}px`;
+  const imgSize = Math.min(Math.max(c.itemSize || 64, 36), 140);
+  return (
+    <Frame block={block}>
+      {c.pinned && (
+        <div className="mb-1 px-3 text-[9px] uppercase tracking-wide text-primary/70">Disematkan di app bar</div>
+      )}
+      {c.style === "image" ? (
+        <div className="flex gap-3 overflow-x-auto" style={{ ...hideScrollbar, padding: pad }}>
+          {parents.map((p) => (
+            <div key={p.id} className="flex shrink-0 flex-col items-center" style={{ width: imgSize + 14 }}>
+              <div className="flex items-center justify-center overflow-hidden" style={{ width: imgSize, height: imgSize }}>
+                {p.imageUrl ? (
+                  <img src={p.imageUrl} alt="" className="h-full w-full object-contain" />
+                ) : (
+                  <div
+                    className="flex h-full w-full items-center justify-center rounded-full font-bold"
+                    style={{ background: hexToRgba(t.primary, 0.12), color: t.primary, fontSize: imgSize * 0.4 }}
+                  >
+                    {p.name.charAt(0).toUpperCase()}
+                  </div>
+                )}
+              </div>
+              <span className="mt-1.5 line-clamp-2 text-center" style={{ fontSize: 11, lineHeight: 1.2 }}>
+                {p.name}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : c.style === "grid" ? (
+        <div className="grid gap-y-3" style={{ gridTemplateColumns: `repeat(${c.columns}, minmax(0,1fr))`, padding: pad }}>
+          {parents.map((p) => (
+            <div key={p.id}>{avatar(p, 48)}</div>
+          ))}
+        </div>
+      ) : c.style === "circle" ? (
+        <div className="flex gap-2 overflow-x-auto" style={{ ...hideScrollbar, padding: pad }}>
+          {parents.map((p) => (
+            <div key={p.id} className="shrink-0" style={{ width: imgSize + 12 }}>
+              {avatar(p, imgSize)}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="flex gap-2 overflow-x-auto" style={{ ...hideScrollbar, padding: pad }}>
+          {parents.map((p) => (
+            <span
+              key={p.id}
+              className="flex h-9 shrink-0 items-center whitespace-nowrap rounded-full bg-white px-3.5"
+              style={{ border: `1px solid ${hexToRgba(t.primary, 0.35)}`, color: t.primary, fontSize: 13, fontWeight: 500 }}
+            >
+              {p.name}
+            </span>
+          ))}
+        </div>
+      )}
+    </Frame>
+  );
+}
+
 function SearchBlock({ block }: { block: HomeBlock<"search"> }) {
   const c: SearchBlockConfig = block.config;
   return (
@@ -952,6 +1036,8 @@ function BlockPreview({ block, data }: { block: HomeBlock; data: PreviewData }) 
       return <BrandsBlock block={block as HomeBlock<"brands">} data={data} />;
     case "categories":
       return <CategoriesBlock block={block as HomeBlock<"categories">} data={data} />;
+    case "parentCategories":
+      return <ParentCategoriesBlock block={block as HomeBlock<"parentCategories">} data={data} />;
     case "search":
       return <SearchBlock block={block as HomeBlock<"search">} />;
     case "text":

@@ -43,11 +43,16 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { ChevronLeft, ImagePlus, Loader2, Save } from "lucide-react";
-import { parsePrice } from "@/lib/price";
 
 interface ProductCategory {
   id: string;
   name: string;
+}
+
+interface Brand {
+  id: string;
+  name: string;
+  logoUrl: string;
 }
 
 export interface ProductFormData {
@@ -55,7 +60,8 @@ export interface ProductFormData {
   name?: string;
   sku?: string;
   category?: string;
-  price?: number;
+  brandId?: string;
+  price?: number | string;
   purchasePrice?: number;
   stock?: number;
   weightGram?: number;
@@ -63,7 +69,24 @@ export interface ProductFormData {
   image?: string;
 }
 
+// Nilai sentinel untuk opsi "Tanpa Brand" (Radix Select melarang value="").
+const NO_BRAND = "__none__";
 
+const parseCurrency = (value: string | number): number => {
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const num = Number(value.replace(/[^0-9]/g, ""));
+    return isNaN(num) ? 0 : num;
+  }
+  return 0;
+};
+
+const formatRupiah = (amount: number) =>
+  new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    minimumFractionDigits: 0,
+  }).format(amount);
 
 function AddCategoryDialog({
   onCategoryAdded,
@@ -133,6 +156,106 @@ function AddCategoryDialog({
   );
 }
 
+function AddBrandDialog({
+  onBrandAdded,
+}: {
+  onBrandAdded: (newBrand: Brand) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [name, setName] = useState("");
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const { toast } = useToast();
+
+  const handleAddBrand = async () => {
+    if (!name.trim()) {
+      toast({ variant: "destructive", title: "Nama brand tidak boleh kosong" });
+      return;
+    }
+    setLoading(true);
+    try {
+      let logoUrl = "";
+      if (logoFile) {
+        const storageRef = ref(storage, `brand_logos/${Date.now()}_${logoFile.name}`);
+        await uploadBytes(storageRef, logoFile);
+        logoUrl = await getDownloadURL(storageRef);
+      }
+      const docRef = await addDoc(collection(db, "brands"), {
+        name: name.trim(),
+        logoUrl,
+        createdAt: serverTimestamp(),
+      });
+      onBrandAdded({ id: docRef.id, name: name.trim(), logoUrl });
+      toast({ title: "Brand baru ditambahkan" });
+      setIsOpen(false);
+      setName("");
+      setLogoFile(null);
+      setLogoPreview(null);
+    } catch (error) {
+      console.error("Error adding brand:", error);
+      toast({ variant: "destructive", title: "Gagal menambah brand" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+      <DialogTrigger asChild>
+        <button
+          type="button"
+          className="w-full text-left p-2 text-sm text-primary hover:bg-accent rounded-md"
+        >
+          + Tambah Brand Baru
+        </button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Tambah Brand Baru</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label htmlFor="brand-name">Nama Brand</Label>
+            <Input id="brand-name" value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="brand-logo">Logo Brand (opsional)</Label>
+            {logoPreview && (
+              <Image
+                src={logoPreview}
+                alt="Preview Logo"
+                width={80}
+                height={80}
+                className="rounded-md border object-contain"
+              />
+            )}
+            <Input
+              id="brand-logo"
+              type="file"
+              accept="image/*"
+              onChange={(e) => {
+                if (e.target.files && e.target.files[0]) {
+                  setLogoFile(e.target.files[0]);
+                  setLogoPreview(URL.createObjectURL(e.target.files[0]));
+                }
+              }}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setIsOpen(false)}>
+            Batal
+          </Button>
+          <Button onClick={handleAddBrand} disabled={loading}>
+            {loading ? "Menyimpan..." : "Simpan Brand"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function ProductForm({ product }: { product?: ProductFormData }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -145,15 +268,18 @@ export function ProductForm({ product }: { product?: ProductFormData }) {
   );
   const [categories, setCategories] = useState<ProductCategory[]>([]);
   const [categorySearch, setCategorySearch] = useState("");
+  const [brands, setBrands] = useState<Brand[]>([]);
+  const [brandSearch, setBrandSearch] = useState("");
 
   const [formData, setFormData] = useState({
     name: product?.name || "",
     sku: product?.sku || "",
     purchasePrice: product?.purchasePrice || 0,
-    price: parsePrice(product?.price),
+    price: product ? parseCurrency(product.price ?? 0) : 0,
     stock: product?.stock || 0,
     weightGram: product?.weightGram || 0,
     category: product?.category || "",
+    brandId: product?.brandId || "",
     description: product?.description || "",
     image: product?.image || "",
   });
@@ -165,7 +291,18 @@ export function ProductForm({ product }: { product?: ProductFormData }) {
       fetched.sort((a, b) => a.name.localeCompare(b.name));
       setCategories(fetched);
     };
+    const fetchBrands = async () => {
+      const snapshot = await getDocs(collection(db, "brands"));
+      const fetched = snapshot.docs.map((d) => ({
+        id: d.id,
+        name: d.data().name as string,
+        logoUrl: (d.data().logoUrl as string) || "",
+      }));
+      fetched.sort((a, b) => a.name.localeCompare(b.name));
+      setBrands(fetched);
+    };
     fetchCategories();
+    fetchBrands();
   }, []);
 
   const filteredCategories = useMemo(
@@ -176,12 +313,28 @@ export function ProductForm({ product }: { product?: ProductFormData }) {
     [categories, categorySearch]
   );
 
+  const filteredBrands = useMemo(
+    () =>
+      brands.filter((b) =>
+        b.name.toLowerCase().includes(brandSearch.toLowerCase())
+      ),
+    [brands, brandSearch]
+  );
+
   const handleCategoryAdded = (newCategory: ProductCategory) => {
     const updated = [...categories, newCategory].sort((a, b) =>
       a.name.localeCompare(b.name)
     );
     setCategories(updated);
     setFormData((prev) => ({ ...prev, category: newCategory.name }));
+  };
+
+  const handleBrandAdded = (newBrand: Brand) => {
+    const updated = [...brands, newBrand].sort((a, b) =>
+      a.name.localeCompare(b.name)
+    );
+    setBrands(updated);
+    setFormData((prev) => ({ ...prev, brandId: newBrand.id }));
   };
 
   const handleInputChange = (
@@ -229,11 +382,10 @@ export function ProductForm({ product }: { product?: ProductFormData }) {
         name: formData.name,
         sku: formData.sku,
         purchasePrice: formData.purchasePrice,
-        // Disimpan sebagai ANGKA, sama seperti purchasePrice, agar dokumen
-        // terbaca seragam oleh dashboard, storefront, dan aplikasi Flutter.
-        price: formData.price,
+        price: formatRupiah(formData.price),
         weightGram: formData.weightGram || 0,
         category: formData.category,
+        brandId: formData.brandId || null,
         description: formData.description,
         image: imageUrl,
       };
@@ -388,6 +540,40 @@ export function ProductForm({ product }: { product?: ProductFormData }) {
                 </SelectContent>
               </Select>
             </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="brand">Brand</Label>
+            <Select
+              onValueChange={(value) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  brandId: value === NO_BRAND ? "" : value,
+                }))
+              }
+              value={formData.brandId || NO_BRAND}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Pilih Brand (opsional)" />
+              </SelectTrigger>
+              <SelectContent>
+                <div className="p-2">
+                  <Input
+                    placeholder="Cari brand..."
+                    className="h-8 w-full"
+                    value={brandSearch}
+                    onChange={(e) => setBrandSearch(e.target.value)}
+                  />
+                </div>
+                <SelectItem value={NO_BRAND}>Tanpa Brand</SelectItem>
+                {filteredBrands.map((b) => (
+                  <SelectItem key={b.id} value={b.id}>
+                    {b.name}
+                  </SelectItem>
+                ))}
+                <Separator className="my-2" />
+                <AddBrandDialog onBrandAdded={handleBrandAdded} />
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-2">
             <Label htmlFor="description">Deskripsi</Label>

@@ -7,6 +7,7 @@ import { ChevronRight, Loader2, Package, Search, ShoppingBag, Store } from "luci
 import { cn } from "@/lib/utils";
 import {
   CATEGORY_SLIDER_MAX,
+  orderParents,
   type AppDesign,
   type BannerBlockConfig,
   type BrandsBlockConfig,
@@ -26,6 +27,7 @@ import {
   usePreviewData,
   type PreviewData,
   type PreviewProduct,
+  type PreviewParent,
 } from "@/components/app-builder/preview-data";
 import { useAppLayout } from "./use-app-layout";
 
@@ -595,6 +597,99 @@ function CategoriesBlock({ block, data }: { block: HomeBlock<"categories">; data
   );
 }
 
+// ── Blok Induk Kategori ──────────────────────────────────────────────
+function ParentCategoriesBlock({ block, data }: { block: HomeBlock<"parentCategories">; data: PreviewData }) {
+  const t = useTheme();
+  const c = block.config;
+  const pad = block.style.paddingH;
+  const size = clamp(c.itemSize || 64, 36, 140);
+  const parents = orderParents(data.parents.filter((p) => p.name), c.order).slice(0, c.limit);
+  if (!parents.length) return null;
+
+  // Gaya "Gambar (geser)": PNG datar tanpa lingkaran, pakai gambar tiap induk.
+  if (c.style === "image") {
+    return (
+      <Frame block={block}>
+        <div className="flex gap-3 overflow-x-auto pb-1" style={{ padding: `0 ${pad}px`, scrollbarWidth: "none" }}>
+          {parents.map((p) => (
+            <Link key={p.id} href={`/reseller/categories?parent=${p.id}`} className="flex shrink-0 flex-col items-center" style={{ width: size + 14 }}>
+              <div className="flex items-center justify-center overflow-hidden" style={{ width: size, height: size }}>
+                {p.imageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={p.imageUrl} alt={p.name} loading="lazy" className="h-full w-full object-contain" />
+                ) : (
+                  <div
+                    className="flex h-full w-full items-center justify-center rounded-full font-bold"
+                    style={{ background: hexToRgba(t.primary, 0.12), color: t.primary, fontSize: size * 0.4 }}
+                  >
+                    {p.name.charAt(0).toUpperCase()}
+                  </div>
+                )}
+              </div>
+              <span className="mt-1.5 line-clamp-2 w-full text-center text-[11px] leading-tight">{p.name}</span>
+            </Link>
+          ))}
+        </div>
+      </Frame>
+    );
+  }
+
+  const avatar = (p: PreviewParent, size: number) => (
+    <Link href={`/reseller/categories?parent=${p.id}`} className="flex flex-col items-center">
+      <div
+        className="flex items-center justify-center overflow-hidden rounded-full"
+        style={{ width: size, height: size, background: hexToRgba(t.primary, 0.12) }}
+      >
+        {p.imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={p.imageUrl} alt={p.name} loading="lazy" className="h-full w-full object-contain" />
+        ) : (
+          <span className="font-bold" style={{ color: t.primary, fontSize: size * 0.4 }}>
+            {p.name.charAt(0).toUpperCase()}
+          </span>
+        )}
+      </div>
+      <span className="mt-1.5 line-clamp-2 text-center text-[11px] leading-tight">{p.name}</span>
+    </Link>
+  );
+
+  return (
+    <Frame block={block}>
+      {c.style === "grid" ? (
+        <div
+          className="gap-y-3"
+          style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(72px, 1fr))`, padding: `0 ${pad}px` }}
+        >
+          {parents.map((p) => (
+            <div key={p.id}>{avatar(p, 52)}</div>
+          ))}
+        </div>
+      ) : c.style === "chip" ? (
+        <div className="flex gap-2 overflow-x-auto pb-1" style={{ padding: `0 ${pad}px`, scrollbarWidth: "none" }}>
+          {parents.map((p) => (
+            <Link
+              key={p.id}
+              href={`/reseller/categories?parent=${p.id}`}
+              className="flex h-9 shrink-0 items-center whitespace-nowrap rounded-full bg-white px-3.5 text-sm font-medium"
+              style={{ border: `1px solid ${hexToRgba(t.primary, 0.35)}`, color: t.primary }}
+            >
+              {p.name}
+            </Link>
+          ))}
+        </div>
+      ) : (
+        <div className="flex gap-3 overflow-x-auto pb-1" style={{ padding: `0 ${pad}px`, scrollbarWidth: "none" }}>
+          {parents.map((p) => (
+            <div key={p.id} className="shrink-0" style={{ width: size + 14 }}>
+              {avatar(p, size)}
+            </div>
+          ))}
+        </div>
+      )}
+    </Frame>
+  );
+}
+
 // ── Blok sederhana ───────────────────────────────────────────────────
 function SearchBlock({ block }: { block: HomeBlock<"search"> }) {
   const c: SearchBlockConfig = block.config;
@@ -715,6 +810,18 @@ function BlockView({ block, data }: { block: HomeBlock; data: PreviewData }) {
       return <BrandsBlock block={block as HomeBlock<"brands">} data={data} />;
     case "categories":
       return <CategoriesBlock block={block as HomeBlock<"categories">} data={data} />;
+    case "parentCategories": {
+      const pcBlock = block as HomeBlock<"parentCategories">;
+      const el = <ParentCategoriesBlock block={pcBlock} data={data} />;
+      // Sematkan (sticky) di bawah app bar (h-16 = 64px) saat halaman di-scroll.
+      return pcBlock.config.pinned ? (
+        <div className="sticky top-16 z-30 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+          {el}
+        </div>
+      ) : (
+        el
+      );
+    }
     case "search":
       return <SearchBlock block={block as HomeBlock<"search">} />;
     case "text":

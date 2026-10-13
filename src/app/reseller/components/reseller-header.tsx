@@ -24,11 +24,13 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useEffect, useState } from "react"
 import Image from "next/image"
 import { cn } from "@/lib/utils"
+import { useAppLayout } from "@/components/storefront-builder/use-app-layout"
 
 function Logo() {
   return (
     <Link href="/reseller" className="flex items-center gap-2 font-semibold font-headline text-lg">
-      <Image src="https://firebasestorage.googleapis.com/v0/b/gallerypos.firebasestorage.app/o/manaf%20hp1.png?alt=media&token=2e3a963c-306d-4ffe-9d55-bc6410ee6a59" alt="Gogama Store Logo" width={75} height={30} />
+      <Image src="https://firebasestorage.googleapis.com/v0/b/gallerypos.firebasestorage.app/o/Manafidh%20Logo.png?alt=media&token=4472e2c9-c319-4222-85e8-708dbf36e7be" alt="Manafidh Store Logo" width={28} height={28} />
+      Manafidh Store
     </Link>
   );
 }
@@ -39,8 +41,16 @@ export default function ResellerHeader({ onToggleSidebar }: { onToggleSidebar?: 
     const router = useRouter();
     const pathname = usePathname();
     const { searchTerm, setSearchTerm } = useResellerFilters();
+    const { layout, hasConfig } = useAppLayout();
     const [isMounted, setIsMounted] = useState(false);
     const [chatUnread, setChatUnread] = useState(0);
+
+    // Warna app bar mengikuti App Builder (settings/app_layout). Bila belum ada
+    // layout yang di-Publish, pakai warna tema bawaan (bg-primary).
+    const design = layout.design;
+    const useCustomBar = hasConfig && !!design.appBarColor;
+    const barFg = design.appBarTextColor || "#FFFFFF";
+    const fgStyle = useCustomBar ? { color: barFg } : undefined;
 
     // Kotak pencarian hanya tampil di Katalog Produk, dan karena berada di
     // dalam header yang sticky, ia tidak ikut ter-scroll bersama daftar produk.
@@ -114,15 +124,23 @@ export default function ResellerHeader({ onToggleSidebar }: { onToggleSidebar?: 
             <Button
                 variant="outline"
                 onClick={() => router.push('/')}
-                className="border-white/60 bg-transparent text-primary-foreground hover:bg-white/15 hover:text-primary-foreground"
+                style={fgStyle}
+                className={cn(
+                    "border-white/60 bg-transparent hover:bg-white/15",
+                    !useCustomBar && "text-primary-foreground hover:text-primary-foreground",
+                )}
             >
                 Login
             </Button>
         );
     }
 
-    // Tombol ikon di atas app bar: putih dengan sorotan transparan.
-    const iconButtonClass = "text-primary-foreground hover:bg-white/15 hover:text-primary-foreground";
+    // Tombol ikon di atas app bar: ikut warna teks app bar (inherit saat warna
+    // kustom), dengan sorotan transparan.
+    const iconButtonClass = cn(
+      "hover:bg-white/15",
+      !useCustomBar && "text-primary-foreground hover:text-primary-foreground",
+    );
     // Badge notifikasi dibalik warnanya agar terbaca di atas latar merek.
     const badgeClass = "absolute -top-2 -right-2 h-5 w-5 justify-center p-0 bg-white text-primary hover:bg-white";
 
@@ -140,7 +158,10 @@ export default function ResellerHeader({ onToggleSidebar }: { onToggleSidebar?: 
     );
 
     return (
-        <header className="bg-primary text-primary-foreground sticky top-0 z-40">
+        <header
+          className={cn("sticky top-0 z-40", !useCustomBar && "bg-primary text-primary-foreground")}
+          style={useCustomBar ? { backgroundColor: design.appBarColor, color: barFg } : undefined}
+        >
         <div className="container mx-auto px-4">
           <div className="flex h-16 items-center justify-between gap-3">
             <div className="flex items-center gap-1">

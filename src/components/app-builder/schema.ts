@@ -13,6 +13,7 @@ export type BlockType =
   | "banner"
   | "brands"
   | "categories"
+  | "parentCategories"
   | "products"
   | "search"
   | "text"
@@ -136,6 +137,24 @@ export interface CategoriesBlockConfig {
   items: CategorySliderItem[];
 }
 
+/** Blok "Induk Kategori" — menampilkan induk dari koleksi `category_parents`.
+ *  Klik induk → halaman sub-kategorinya. Bisa disematkan (sticky) di app bar. */
+export interface ParentCategoriesBlockConfig {
+  /** image = gambar PNG datar (tanpa lingkaran) yang digeser, pakai `imageUrl` tiap induk. */
+  style: "chip" | "grid" | "circle" | "image";
+  columns: number;
+  limit: number;
+  /** Ukuran kartu untuk gaya "image" (PNG datar). */
+  itemSize: number;
+  /** Urutan tampil (id dokumen `category_parents`). Induk yang tak ada di sini
+   *  ditampilkan setelahnya (urut nama) sehingga induk baru tetap muncul. */
+  order: string[];
+  /** true = blok menempel di bawah app bar saat halaman di-scroll. */
+  pinned: boolean;
+  /** true = tampilkan juga sebagai bar menempel di halaman Katalog Produk. */
+  showInCatalog: boolean;
+}
+
 export interface SearchBlockConfig {
   placeholder: string;
   radius: number;
@@ -184,6 +203,7 @@ export interface BlockConfigMap {
   banner: BannerBlockConfig;
   brands: BrandsBlockConfig;
   categories: CategoriesBlockConfig;
+  parentCategories: ParentCategoriesBlockConfig;
   products: ProductBlockConfig;
   search: SearchBlockConfig;
   text: TextBlockConfig;
@@ -282,6 +302,7 @@ export const DEFAULT_CONFIGS: BlockConfigMap = {
   },
   brands: { style: "card", itemSize: 70 },
   categories: { style: "chip", columns: 4, limit: 12, itemSize: 84, items: [] },
+  parentCategories: { style: "circle", columns: 4, limit: 12, itemSize: 64, order: [], pinned: false, showInCatalog: false },
   products: {
     source: "latest",
     category: "",
@@ -391,6 +412,8 @@ export function createBlock(type: BlockType): HomeBlock {
       });
     case "categories":
       return block(id, type, { title: "Kategori", style: { marginTop: 16, paddingH: 16 } });
+    case "parentCategories":
+      return block(id, type, { title: "Kategori Pilihan", style: { marginTop: 16, paddingH: 16 } });
     case "brands":
       return block(id, type, { title: "Brand", style: { marginTop: 16, paddingH: 16 } });
     case "banner":
@@ -466,12 +489,28 @@ export function normalizeLayout(raw: unknown): AppLayout {
   };
 }
 
+/**
+ * Mengurutkan daftar induk kategori sesuai `order` (id dokumen) yang disimpan di
+ * konfigurasi blok. Induk yang tidak ada di `order` ditaruh setelahnya dengan
+ * urutan aslinya — jadi induk baru tetap muncul tanpa admin harus mengaturnya.
+ */
+export function orderParents<T extends { id: string }>(items: T[], order: string[] | undefined): T[] {
+  if (!order || order.length === 0) return items;
+  const rank = new Map(order.map((id, i) => [id, i]));
+  return [...items].sort((a, b) => {
+    const ra = rank.has(a.id) ? rank.get(a.id)! : Number.MAX_SAFE_INTEGER;
+    const rb = rank.has(b.id) ? rank.get(b.id)! : Number.MAX_SAFE_INTEGER;
+    return ra - rb;
+  });
+}
+
 // ───────────────────────────── Katalog UI ──────────────────────────────
 
 export const BLOCK_LABELS: Record<BlockType, { label: string; description: string }> = {
   banner: { label: "Banner", description: "Slider banner dari menu Desain & Banner" },
   brands: { label: "Brand", description: "Daftar logo brand" },
   categories: { label: "Kategori", description: "Chip / ikon kategori produk" },
+  parentCategories: { label: "Induk Kategori", description: "Kelompok kategori; klik → sub-kategori. Bisa sticky di app bar" },
   products: { label: "Produk", description: "Daftar produk dengan banyak gaya layout" },
   search: { label: "Kotak Pencarian", description: "Membuka katalog untuk mencari produk" },
   text: { label: "Teks", description: "Judul atau paragraf bebas" },

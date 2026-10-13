@@ -47,10 +47,15 @@ const formatCurrency = (value: string | number): string => {
     }).format(num);
 }
 
-export default function ProductGrid({ searchTerm, category, viewMode = "grid" }: { searchTerm: string, category: string, viewMode?: "grid" | "list" }) {
+export default function ProductGrid({ searchTerm, category, viewMode = "grid", categories }: { searchTerm: string, category: string, viewMode?: "grid" | "list", categories?: string[] }) {
     const [allProducts, setAllProducts] = useState<Product[]>([]);
     const [loading, setLoading] = useState(true);
     const { toast } = useToast();
+    // Bila `categories` diberikan (mis. halaman Induk Kategori), produk difilter
+    // berdasarkan keanggotaan di kumpulan nama kategori ini — bukan satu kategori.
+    const categoriesKey = (categories ?? []).join("|");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const catSet = useMemo(() => new Set(categories ?? []), [categoriesKey]);
     // Konfigurasi App Builder (settings/app_layout → catalog). Hanya dipakai
     // untuk tampilan GRID; mode "list" tetap memakai ProductListItem bawaan.
     const { layout: appLayout, hasConfig } = useAppLayout();
@@ -105,7 +110,9 @@ export default function ProductGrid({ searchTerm, category, viewMode = "grid" }:
     
     const filteredProducts = useMemo(() => {
         let filtered = allProducts;
-        if (category !== "Semua") {
+        if (catSet.size > 0) {
+            filtered = filtered.filter(p => catSet.has(p.category));
+        } else if (category !== "Semua") {
             filtered = filtered.filter(p => p.category === category);
         }
         if (searchTerm) {
@@ -136,7 +143,7 @@ export default function ProductGrid({ searchTerm, category, viewMode = "grid" }:
         });
 
         return sorted;
-    }, [allProducts, category, searchTerm]);
+    }, [allProducts, category, searchTerm, catSet]);
 
     // ── Render bertahap saat scroll (virtualisasi sederhana) ──────────
     // Data penuh tetap di memori (filteredProducts), jadi PENCARIAN tetap
@@ -148,7 +155,7 @@ export default function ProductGrid({ searchTerm, category, viewMode = "grid" }:
     // Reset ke awal setiap kali hasil filter berubah (pencarian/kategori baru).
     useEffect(() => {
         setVisibleCount(INITIAL_VISIBLE);
-    }, [searchTerm, category, viewMode]);
+    }, [searchTerm, category, viewMode, catSet]);
 
     const visibleProducts = useMemo(
         () => filteredProducts.slice(0, visibleCount),

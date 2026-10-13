@@ -3,6 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import Image from "next/image"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
   Card,
@@ -36,8 +37,7 @@ import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox";
-import { collection, getDocs, serverTimestamp, doc, writeBatch, deleteDoc } from "firebase/firestore";
-import { parsePrice } from "@/lib/price";
+import { collection, getDocs, serverTimestamp, doc, writeBatch, deleteDoc, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -59,8 +59,18 @@ interface Product {
   image: string;
   'data-ai-hint': string;
   description?: string;
+  isPromo?: boolean;
+  promoPrice?: number;
 }
 
+const parseCurrency = (value: string | number): number => {
+    if (typeof value === 'number') return value;
+    if (typeof value === 'string') {
+        const num = Number(value.replace(/[^0-9]/g, ''));
+        return isNaN(num) ? 0 : num;
+    }
+    return 0;
+}
 
 const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("id-ID", {
@@ -85,8 +95,8 @@ function BulkImportDialog({ onImportSuccess }: { onImportSuccess: () => void }) 
 
     const handleDownloadTemplate = () => {
         const worksheet = XLSX.utils.aoa_to_sheet([
-            ["name", "sku", "price", "purchasePrice", "stock", "weightGram", "category", "description"],
-            ["Kaos Polos", "KP-001", 120000, 75000, 100, 250, "Pakaian", "Kaos polos bahan katun combed 30s."],
+            ["name", "sku", "price", "purchasePrice", "stock", "weightGram", "category", "brand", "description"],
+            ["Kaos Polos", "KP-001", 120000, 75000, 100, 250, "Pakaian", "Manafidh", "Kaos polos bahan katun combed 30s."],
         ]);
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, "Produk");
@@ -128,24 +138,50 @@ function BulkImportDialog({ onImportSuccess }: { onImportSuccess: () => void }) 
                 }
                 // --- End of new category logic ---
 
+                // --- Brand: cocokkan nama brand di Excel ke koleksi `brands`;
+                //     brand baru dibuat otomatis (sama seperti kategori). ---
+                const brandsFromExcel = [...new Set(
+                    json.map(row => (typeof row.brand === 'string' ? row.brand.trim() : ''))
+                        .filter(b => b !== '')
+                )];
+                const brandsSnapshot = await getDocs(collection(db, 'brands'));
+                const brandNameToId = new Map<string, string>();
+                brandsSnapshot.docs.forEach(d => {
+                    const n = (d.data().name as string | undefined)?.trim();
+                    if (n) brandNameToId.set(n.toLowerCase(), d.id);
+                });
+                const newBrands = brandsFromExcel.filter(b => !brandNameToId.has(b.toLowerCase()));
+                if (newBrands.length > 0) {
+                    const brandBatch = writeBatch(db);
+                    newBrands.forEach(brandName => {
+                        const brandRef = doc(collection(db, 'brands'));
+                        brandBatch.set(brandRef, { name: brandName, logoUrl: '', createdAt: serverTimestamp() });
+                        brandNameToId.set(brandName.toLowerCase(), brandRef.id);
+                    });
+                    await brandBatch.commit();
+                    toast({ title: 'Brand Baru Ditambahkan', description: `${newBrands.length} brand baru dari file Excel telah dibuat.` });
+                }
+                // --- End of brand logic ---
+
                 let addedCount = 0;
                 const productBatch = writeBatch(db);
 
                 json.forEach((row) => {
-                    if (!row.name || !row.sku || parsePrice(row.price) <= 0) return; // Skip invalid rows
+                    if (!row.name || !row.sku || !row.price) return; // Skip invalid rows
+
+                    const brandName = typeof row.brand === 'string' ? row.brand.trim() : '';
+                    const brandId = brandName ? (brandNameToId.get(brandName.toLowerCase()) ?? null) : null;
 
                     const productRef = doc(collection(db, "products"));
                     productBatch.set(productRef, {
                         name: row.name,
                         sku: row.sku,
-                        // Harga jual disimpan sebagai ANGKA, sama seperti
-                        // purchasePrice — kolom Excel boleh berisi angka polos
-                        // maupun teks terformat ("Rp 150.000").
-                        price: parsePrice(row.price),
-                        purchasePrice: parsePrice(row.purchasePrice),
+                        price: new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(row.price || 0),
+                        purchasePrice: Number(row.purchasePrice) || 0,
                         stock: Number(row.stock) || 0,
                         weightGram: Number(row.weightGram) || 0,
                         category: row.category || "Uncategorized",
+                        brandId,
                         description: row.description || "",
                         image: 'https://placehold.co/400x400.png',
                         'data-ai-hint': 'product item',
@@ -242,10 +278,35 @@ export default function ProductsPage() {
             return {
                 id: doc.id,
                 ...data,
-                price: parsePrice(data.price), // Normalize price here
+                price: parseCurrency(data.price), // Normalize price here
             } as Product;
         });
-        setProducts(productsData);
+
+        // Promo aktif (samakan dengan halaman reseller/Flutter): dokumen
+        // `promotions` dengan startDate <= now < endDate. Produk terkait diberi
+        // harga promo untuk ditampilkan.
+        const now = new Date();
+        const promoSnap = await getDocs(
+            query(collection(db, "promotions"), where("endDate", ">", now))
+        );
+        const activePromos = new Map<string, number>();
+        promoSnap.forEach((d) => {
+            const p = d.data() as any;
+            const start = p.startDate?.toDate ? p.startDate.toDate() : null;
+            const dp = typeof p.discountPrice === "number" ? p.discountPrice : Number(p.discountPrice);
+            if (p.productId && start && start <= now && !isNaN(dp)) {
+                activePromos.set(p.productId, dp);
+            }
+        });
+
+        const enriched = productsData.map((p) => {
+            const dp = activePromos.get(p.id);
+            if (dp != null && dp < p.price) {
+                return { ...p, isPromo: true, promoPrice: dp };
+            }
+            return p;
+        });
+        setProducts(enriched);
     } catch (error) {
         console.error("Error fetching products:", error);
     } finally {
@@ -469,15 +530,21 @@ export default function ProductsPage() {
                                         />
                                     </TableCell>
                                     <TableCell>
-                                        <Image
-                                            alt={product.name}
-                                            className="aspect-square rounded-md object-cover"
-                                            height={64}
-                                            width={64}
-                                            src={product.image || 'https://placehold.co/64x64.png'}
-                                        />
+                                        <Link href={`/dashboard/products/${product.id}`} onClick={(e) => e.stopPropagation()}>
+                                            <Image
+                                                alt={product.name}
+                                                className="aspect-square rounded-md object-cover"
+                                                height={64}
+                                                width={64}
+                                                src={product.image || 'https://placehold.co/64x64.png'}
+                                            />
+                                        </Link>
                                     </TableCell>
-                                    <TableCell className="font-medium">{product.name}</TableCell>
+                                    <TableCell className="font-medium">
+                                        <Link href={`/dashboard/products/${product.id}`} onClick={(e) => e.stopPropagation()} className="hover:underline">
+                                            {product.name}
+                                        </Link>
+                                    </TableCell>
                                     <TableCell className="hidden md:table-cell">
                                         <Badge className={cn({
                                             'bg-destructive text-destructive-foreground hover:bg-destructive/80': product.stock === 0,
@@ -487,7 +554,21 @@ export default function ProductsPage() {
                                         </Badge>
                                     </TableCell>
                                     <TableCell className="text-right hidden sm:table-cell">{formatCurrency(product.purchasePrice || 0)}</TableCell>
-                                    <TableCell className="text-right">{formatCurrency(product.price)}</TableCell>
+                                    <TableCell className="text-right">
+                                        {product.isPromo && product.promoPrice != null ? (
+                                            <div className="flex flex-col items-end gap-0.5">
+                                                <div className="flex items-center gap-1.5">
+                                                    <Badge variant="destructive" className="px-1 py-0 text-[10px] leading-none">
+                                                        -{Math.round(((product.price - product.promoPrice) / product.price) * 100)}%
+                                                    </Badge>
+                                                    <span className="text-xs text-muted-foreground line-through">{formatCurrency(product.price)}</span>
+                                                </div>
+                                                <span className="font-semibold text-primary">{formatCurrency(product.promoPrice)}</span>
+                                            </div>
+                                        ) : (
+                                            formatCurrency(product.price)
+                                        )}
+                                    </TableCell>
                                     <TableCell className="text-right text-muted-foreground">
                                         <ChevronRightIcon className="ml-auto h-4 w-4" />
                                     </TableCell>

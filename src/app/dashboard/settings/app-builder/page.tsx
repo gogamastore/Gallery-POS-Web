@@ -14,6 +14,7 @@ import {
   GripVertical,
   Image as ImageIcon,
   LayoutGrid,
+  Layers,
   Loader2,
   MousePointerClick,
   Palette,
@@ -55,6 +56,7 @@ const BLOCK_ICONS: Record<BlockType, LucideIcon> = {
   banner: GalleryHorizontal,
   brands: BadgeCheck,
   categories: LayoutGrid,
+  parentCategories: Layers,
   products: ShoppingBag,
   search: Search,
   text: Type,
@@ -63,7 +65,7 @@ const BLOCK_ICONS: Record<BlockType, LucideIcon> = {
   button: MousePointerClick,
 };
 
-const ADDABLE: BlockType[] = ["products", "banner", "categories", "brands", "search", "image", "text", "button", "spacer"];
+const ADDABLE: BlockType[] = ["products", "banner", "categories", "parentCategories", "brands", "search", "image", "text", "button", "spacer"];
 
 // Firestore menolak `undefined`; JSON round-trip sekaligus membuat salinan bersih.
 const toFirestore = (layout: AppLayout) => JSON.parse(JSON.stringify(layout)) as AppLayout;

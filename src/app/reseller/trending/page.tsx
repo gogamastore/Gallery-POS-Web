@@ -4,6 +4,7 @@
 import { useState } from "react";
 import ProductFilters from "../components/product-filters";
 import ProductGrid from "@/components/home/product-grid";
+import CatalogParentBar from "@/components/reseller/catalog-parent-bar";
 import { useResellerFilters } from "@/components/providers/reseller-filter-provider";
 
 export default function CatalogPage() {
@@ -14,6 +15,7 @@ export default function CatalogPage() {
 
     return (
         <div className="flex flex-col gap-2 animate-in fade-in-0 duration-500">
+            <CatalogParentBar />
             <ProductFilters
                 onSearchChange={setSearchTerm}
                 onCategoryChange={setCategory}

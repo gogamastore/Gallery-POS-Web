@@ -80,6 +80,8 @@ interface Product {
   weightGram?: number;
   image: string;
   description?: string;
+  isPromo?: boolean;
+  promoPrice?: number;
 }
 
 interface PurchaseHistoryItem {
@@ -238,10 +240,37 @@ export default function ProductDetailPage() {
           return;
         }
         const data = snap.data();
+        const priceNum = parseCurrency(data.price);
+
+        // Promo aktif untuk produk ini (samakan dengan halaman reseller/Flutter):
+        // dokumen `promotions` dengan startDate <= now < endDate.
+        let isPromo = false;
+        let promoPrice: number | undefined;
+        try {
+          const now = new Date();
+          const promoSnap = await getDocs(
+            query(collection(db, "promotions"), where("endDate", ">", now))
+          );
+          promoSnap.forEach((d) => {
+            const p = d.data() as any;
+            if (p.productId !== snap.id) return;
+            const start = p.startDate?.toDate ? p.startDate.toDate() : null;
+            const dp = typeof p.discountPrice === "number" ? p.discountPrice : Number(p.discountPrice);
+            if (start && start <= now && !isNaN(dp) && dp < priceNum) {
+              isPromo = true;
+              promoPrice = dp;
+            }
+          });
+        } catch (e) {
+          console.error("Gagal memuat promo:", e);
+        }
+
         setProduct({
           id: snap.id,
           ...data,
-          price: parseCurrency(data.price),
+          price: priceNum,
+          isPromo,
+          promoPrice,
         } as Product);
       } catch (error) {
         console.error("Error fetching product:", error);
@@ -283,7 +312,13 @@ export default function ProductDetailPage() {
 
   if (!product) return null;
 
-  const margin = (product.price || 0) - (product.purchasePrice || 0);
+  // Harga jual efektif = harga promo bila produk sedang promo, selain itu
+  // harga jual asli. Margin/untung dihitung dari harga efektif ini.
+  const effectivePrice =
+    product.isPromo && product.promoPrice != null
+      ? product.promoPrice
+      : product.price || 0;
+  const margin = effectivePrice - (product.purchasePrice || 0);
 
   return (
     <div className="mx-auto w-full max-w-4xl space-y-6">
@@ -334,10 +369,24 @@ export default function ProductDetailPage() {
             <p className="mt-1 text-sm text-muted-foreground">SKU: {product.sku}</p>
           </div>
 
-          <div className="flex items-baseline gap-3">
-            <span className="text-3xl font-bold text-primary">
-              {formatCurrency(product.price)}
-            </span>
+          <div className="flex items-baseline gap-3 flex-wrap">
+            {product.isPromo && product.promoPrice != null ? (
+              <div className="flex items-baseline gap-2 flex-wrap">
+                <span className="text-3xl font-bold text-primary">
+                  {formatCurrency(product.promoPrice)}
+                </span>
+                <span className="text-lg text-muted-foreground line-through">
+                  {formatCurrency(product.price)}
+                </span>
+                <Badge variant="destructive">
+                  -{Math.round(((product.price - product.promoPrice) / product.price) * 100)}%
+                </Badge>
+              </div>
+            ) : (
+              <span className="text-3xl font-bold text-primary">
+                {formatCurrency(product.price)}
+              </span>
+            )}
             <Badge
               className={cn({
                 "bg-destructive text-destructive-foreground hover:bg-destructive/80":
@@ -360,6 +409,9 @@ export default function ProductDetailPage() {
               <InfoRow icon={Tag} label="Margin / Untung">
                 <span className={margin >= 0 ? "text-green-600" : "text-destructive"}>
                   {formatCurrency(margin)}
+                  {product.isPromo && product.promoPrice != null && (
+                    <span className="ml-1 text-xs font-normal text-muted-foreground">(dari harga promo)</span>
+                  )}
                 </span>
               </InfoRow>
               <InfoRow icon={Boxes} label="Stok Saat Ini">

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -20,6 +21,7 @@ import {
   FONT_OPTIONS,
   HORIZONTAL_LAYOUTS,
   LINK_PRESETS,
+  orderParents,
   PRODUCT_LAYOUTS,
   PRODUCT_SOURCES,
   SORT_OPTIONS,
@@ -34,7 +36,79 @@ import {
   type ProductCardStyle,
   type ProductLayout,
 } from "./schema";
-import type { PreviewData } from "./preview-data";
+import type { PreviewData, PreviewParent } from "./preview-data";
+
+// ─────────────────── Pengurutan induk kategori (App Bar) ────────────────
+
+/**
+ * Daftar induk kategori yang bisa diubah urutannya (naik/turun). Urutan disimpan
+ * sebagai array id ke `config.order`; induk baru otomatis ikut muncul di akhir.
+ */
+function ParentOrderList({
+  parents,
+  order,
+  onReorder,
+}: {
+  parents: PreviewParent[];
+  order: string[];
+  onReorder: (order: string[]) => void;
+}) {
+  const ordered = orderParents(parents.filter((p) => p.name), order);
+  if (ordered.length === 0) {
+    return (
+      <p className="text-[11px] leading-relaxed text-muted-foreground">
+        Belum ada induk kategori. Tambahkan dulu di Pengaturan Kategori Produk.
+      </p>
+    );
+  }
+
+  const move = (from: number, to: number) => {
+    if (to < 0 || to >= ordered.length) return;
+    const ids = ordered.map((p) => p.id);
+    const [moved] = ids.splice(from, 1);
+    ids.splice(to, 0, moved);
+    onReorder(ids);
+  };
+
+  return (
+    <div className="space-y-1">
+      <p className="text-[11px] font-medium text-muted-foreground">Urutan Tampil</p>
+      <div className="rounded-md border">
+        {ordered.map((p, i) => (
+          <div key={p.id} className="flex items-center gap-2 border-b px-2 py-1.5 last:border-b-0">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary/10">
+              {p.imageUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={p.imageUrl} alt="" className="h-full w-full object-contain" />
+              ) : (
+                <span className="text-xs font-bold text-primary">{p.name.charAt(0).toUpperCase()}</span>
+              )}
+            </div>
+            <span className="min-w-0 flex-1 truncate text-xs">{p.name}</span>
+            <button
+              type="button"
+              disabled={i === 0}
+              onClick={() => move(i, i - 1)}
+              className="rounded p-1 text-muted-foreground hover:bg-muted disabled:opacity-30"
+              aria-label="Naikkan"
+            >
+              <ChevronUp className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              disabled={i === ordered.length - 1}
+              onClick={() => move(i, i + 1)}
+              className="rounded p-1 text-muted-foreground hover:bg-muted disabled:opacity-30"
+              aria-label="Turunkan"
+            >
+              <ChevronDown className="h-4 w-4" />
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 // ─────────────────────────── Ikon layout mini ──────────────────────────
 
@@ -571,6 +645,61 @@ function ContentSettings({ block, onChange, data }: { block: HomeBlock; onChange
           ) : (
             <SliderField label="Jumlah Maks." value={c.limit} min={1} max={50} onChange={(limit) => set({ limit })} />
           )}
+        </Section>
+      );
+      break;
+    }
+    case "parentCategories": {
+      const c = (block as HomeBlock<"parentCategories">).config;
+      body = (
+        <Section title="Induk Kategori">
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            Menampilkan induk kategori dari{" "}
+            <Link href="/dashboard/settings/product-categories" className="underline">
+              Pengaturan Kategori Produk
+            </Link>
+            . Klik induk → halaman sub-kategorinya.
+          </p>
+          <SelectField
+            label="Gaya"
+            value={c.style}
+            options={[
+              { value: "circle", label: "Ikon bulat (geser)" },
+              { value: "image", label: "Gambar (geser)" },
+              { value: "chip", label: "Chip (geser)" },
+              { value: "grid", label: "Grid ikon" },
+            ]}
+            onChange={(style) => set({ style })}
+          />
+          {c.style === "image" && (
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              Menampilkan gambar PNG datar (tanpa lingkaran) dari gambar yang diunggah di tiap induk kategori.
+            </p>
+          )}
+          {c.style === "grid" && (
+            <SliderField label="Kolom" value={c.columns} min={2} max={6} onChange={(columns) => set({ columns })} />
+          )}
+          {(c.style === "image" || c.style === "circle") && (
+            <SliderField label="Ukuran Ikon" value={c.itemSize} min={36} max={140} onChange={(itemSize) => set({ itemSize })} />
+          )}
+          <SliderField label="Jumlah Maks." value={c.limit} min={1} max={50} onChange={(limit) => set({ limit })} />
+          <ParentOrderList
+            parents={data.parents}
+            order={c.order}
+            onReorder={(order) => set({ order })}
+          />
+          <SwitchField
+            label="Sematkan di App Bar (sticky)"
+            hint="Blok menempel di bawah app bar saat halaman di-scroll."
+            checked={c.pinned}
+            onChange={(pinned) => set({ pinned })}
+          />
+          <SwitchField
+            label="Tampilkan di halaman Katalog"
+            hint="Muncul sebagai bar menempel di app bar halaman Katalog Produk."
+            checked={c.showInCatalog}
+            onChange={(showInCatalog) => set({ showInCatalog })}
+          />
         </Section>
       );
       break;

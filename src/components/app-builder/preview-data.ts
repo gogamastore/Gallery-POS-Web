@@ -40,11 +40,19 @@ export interface PreviewBrand {
   logoUrl: string;
 }
 
+export interface PreviewParent {
+  id: string;
+  name: string;
+  imageUrl: string;
+  children: string[];
+}
+
 export interface PreviewData {
   loading: boolean;
   banners: PreviewBanner[];
   brands: PreviewBrand[];
   categories: string[];
+  parents: PreviewParent[];
   /** productId → harga promo aktif. */
   promos: Record<string, number>;
 }
@@ -186,6 +194,7 @@ export function usePreviewData(): PreviewData {
     banners: [],
     brands: [],
     categories: [],
+    parents: [],
     promos: {},
   });
 
@@ -194,14 +203,15 @@ export function usePreviewData(): PreviewData {
     (async () => {
       promoCache ??= fetchActivePromos();
       // allSettled: satu koleksi gagal dimuat tidak mengosongkan preview lain.
-      const [bannerRes, brandRes, categoryRes, promoRes] = await Promise.allSettled([
+      const [bannerRes, brandRes, categoryRes, parentRes, promoRes] = await Promise.allSettled([
         getDocs(query(collection(db, "banners"), orderBy("order", "asc"))),
         getDocs(query(collection(db, "brands"), orderBy("createdAt", "desc"))),
         getDocs(query(collection(db, "product_categories"), orderBy("name", "asc"))),
+        getDocs(query(collection(db, "category_parents"), orderBy("name", "asc"))),
         promoCache,
       ]);
       if (!active) return;
-      [bannerRes, brandRes, categoryRes, promoRes].forEach((r) => {
+      [bannerRes, brandRes, categoryRes, parentRes, promoRes].forEach((r) => {
         if (r.status === "rejected") console.error("Gagal memuat data preview", r.reason);
       });
       const docsOf = (r: PromiseSettledResult<{ docs: QueryDocumentSnapshot[] }>) =>
@@ -224,6 +234,14 @@ export function usePreviewData(): PreviewData {
         categories: docsOf(categoryRes)
           .map((d) => String(d.data().name ?? "").trim())
           .filter(Boolean),
+        parents: docsOf(parentRes)
+          .map((d) => ({
+            id: d.id,
+            name: String(d.data().name ?? "").trim(),
+            imageUrl: String(d.data().imageUrl ?? ""),
+            children: Array.isArray(d.data().children) ? (d.data().children as string[]) : [],
+          }))
+          .filter((p) => p.name),
         promos: promoRes.status === "fulfilled" ? promoRes.value : {},
       });
     })().catch((e) => {

@@ -46,8 +46,10 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
-import { PlusCircle, Trash2, Loader2, ArrowLeft, Edit, MoreHorizontal, LayoutGrid, AlertCircle } from 'lucide-react';
+import { PlusCircle, Trash2, Loader2, ArrowLeft, Edit, MoreHorizontal, LayoutGrid, AlertCircle, Layers } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import {
     DropdownMenu,
@@ -167,10 +169,159 @@ function CategoryFormDialog({ category, onSave }: { category?: ProductCategory, 
     )
 }
 
+interface ParentCategory {
+  id: string;
+  name: string;
+  imageUrl?: string;
+  children: string[]; // nama sub-kategori (product_categories.name)
+}
+
+/**
+ * Dialog tambah/edit Induk Kategori. Induk disimpan di koleksi TERPISAH
+ * `category_parents` {name, imageUrl, children:[nama kategori]} — produk &
+ * `product_categories` TIDAK berubah (hanya lapisan pengelompokan/navigasi).
+ */
+function ParentFormDialog({
+  parent,
+  categories,
+  onSave,
+}: {
+  parent?: ParentCategory;
+  categories: ProductCategory[];
+  onSave: () => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [name, setName] = useState('');
+  const [children, setChildren] = useState<string[]>([]);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    if (parent) {
+      setName(parent.name);
+      setChildren(parent.children ?? []);
+      setImagePreview(parent.imageUrl || null);
+    } else {
+      setName('');
+      setChildren([]);
+      setImagePreview(null);
+    }
+    setImageFile(null);
+  }, [parent, isOpen]);
+
+  const toggleChild = (catName: string, checked: boolean) =>
+    setChildren((prev) =>
+      checked ? [...new Set([...prev, catName])] : prev.filter((c) => c !== catName));
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setImageFile(file);
+      setImagePreview(URL.createObjectURL(file));
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!name.trim()) {
+      toast({ variant: 'destructive', title: 'Nama induk kategori tidak boleh kosong.' });
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      let imageUrl = parent?.imageUrl || '';
+      if (imageFile) {
+        const storageRef = ref(storage, `category_icons/${Date.now()}_${imageFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`);
+        await uploadBytes(storageRef, imageFile);
+        imageUrl = await getDownloadURL(storageRef);
+      }
+      const payload = { name: name.trim(), imageUrl, children, updatedAt: serverTimestamp() };
+      if (parent) {
+        await updateDoc(doc(db, 'category_parents', parent.id), payload);
+        toast({ title: 'Induk kategori diperbarui.' });
+      } else {
+        await addDoc(collection(db, 'category_parents'), { ...payload, createdAt: serverTimestamp() });
+        toast({ title: 'Induk kategori ditambahkan.' });
+      }
+      onSave();
+      setIsOpen(false);
+    } catch (error) {
+      console.error(error);
+      toast({ variant: 'destructive', title: `Gagal ${parent ? 'memperbarui' : 'menambah'} induk kategori.` });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const triggerButton = parent ? (
+    <button className="relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent focus:text-accent-foreground w-full">
+      <Edit className="mr-2 h-4 w-4" />
+      <span>Edit</span>
+    </button>
+  ) : (
+    <Button><PlusCircle className="mr-2 h-4 w-4" />Tambah Induk Kategori</Button>
+  );
+
+  return (
+    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+      <DialogTrigger asChild>{triggerButton}</DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{parent ? 'Edit Induk Kategori' : 'Tambah Induk Kategori'}</DialogTitle>
+          <DialogDescription>Kelompokkan sub-kategori ke dalam satu induk (mis. Skincare).</DialogDescription>
+        </DialogHeader>
+        <div className="py-2 space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="parent-name">Nama Induk Kategori</Label>
+            <Input id="parent-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Contoh: Skincare" />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="parent-icon">Ikon / Gambar (opsional)</Label>
+            {imagePreview && (
+              <Image src={imagePreview} alt="Preview" width={64} height={64} className="rounded-md object-contain border bg-muted p-1" />
+            )}
+            <Input id="parent-icon" type="file" accept="image/*" onChange={handleFileChange} />
+          </div>
+          <div className="space-y-2">
+            <Label>Sub-kategori yang termasuk</Label>
+            {categories.length === 0 ? (
+              <p className="text-xs text-muted-foreground">Belum ada kategori. Tambahkan kategori terlebih dahulu.</p>
+            ) : (
+              <ScrollArea className="h-48 rounded-md border p-2">
+                <div className="space-y-1.5">
+                  {categories.map((c) => (
+                    <label key={c.id} className="flex items-center gap-2 rounded px-1 py-1 text-sm hover:bg-muted cursor-pointer">
+                      <Checkbox
+                        checked={children.includes(c.name)}
+                        onCheckedChange={(v) => toggleChild(c.name, v === true)}
+                      />
+                      <span>{c.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </ScrollArea>
+            )}
+            <p className="text-xs text-muted-foreground">{children.length} sub-kategori dipilih.</p>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setIsOpen(false)}>Batal</Button>
+          <Button onClick={handleSubmit} disabled={isSubmitting}>
+            {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Simpan
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function ProductCategoriesPage() {
   const { toast } = useToast();
   const router = useRouter();
   const [categories, setCategories] = useState<ProductCategory[]>([]);
+  const [parents, setParents] = useState<ParentCategory[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchCategories = async () => {
@@ -190,9 +341,41 @@ export default function ProductCategoriesPage() {
     }
   };
 
+  const fetchParents = async () => {
+    try {
+      const q = query(collection(db, 'category_parents'), orderBy('name', 'asc'));
+      const snap = await getDocs(q);
+      setParents(
+        snap.docs.map((d) => {
+          const data = d.data();
+          return {
+            id: d.id,
+            name: data.name,
+            imageUrl: data.imageUrl,
+            children: Array.isArray(data.children) ? (data.children as string[]) : [],
+          } as ParentCategory;
+        }),
+      );
+    } catch (error) {
+      console.error('Error fetching parent categories: ', error);
+    }
+  };
+
   useEffect(() => {
     fetchCategories();
+    fetchParents();
   }, []);
+
+  const handleDeleteParent = async (id: string, name: string) => {
+    try {
+      await deleteDoc(doc(db, 'category_parents', id));
+      toast({ title: 'Induk Kategori Dihapus', description: `"${name}" telah dihapus.` });
+      fetchParents();
+    } catch (error) {
+      console.error('Error deleting parent: ', error);
+      toast({ variant: 'destructive', title: 'Gagal Menghapus Induk Kategori' });
+    }
+  };
 
   const handleDeleteCategory = async (id: string, name: string) => {
     try {
@@ -217,6 +400,80 @@ export default function ProductCategoriesPage() {
             </Button>
             <h1 className="text-xl md:text-2xl font-bold">Pengaturan Kategori Produk</h1>
         </div>
+
+      {/* Induk Kategori — pengelompokan sub-kategori (tidak mengubah produk) */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle>Induk Kategori</CardTitle>
+            <CardDescription>
+              Kelompokkan beberapa kategori ke dalam satu induk (mis. Skincare → Face Wash, Cream, …).
+            </CardDescription>
+          </div>
+          <ParentFormDialog categories={categories} onSave={fetchParents} />
+        </CardHeader>
+        <CardContent>
+          {parents.length > 0 ? (
+            <div className="space-y-4">
+              {parents.map((parent) => (
+                <div key={parent.id} className="flex items-center justify-between rounded-lg border p-4">
+                  <div className="flex items-center gap-4 min-w-0">
+                    {parent.imageUrl ? (
+                      <Image src={parent.imageUrl} alt={parent.name} width={36} height={36} className="h-9 w-9 rounded-md object-contain bg-muted p-1" />
+                    ) : (
+                      <Layers className="h-5 w-5 text-muted-foreground" />
+                    )}
+                    <div className="min-w-0">
+                      <p className="font-medium">{parent.name}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {parent.children.length > 0 ? parent.children.join(', ') : 'Belum ada sub-kategori'}
+                      </p>
+                    </div>
+                  </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-8 w-8">
+                        <MoreHorizontal className="h-4 w-4" />
+                        <span className="sr-only">Menu aksi</span>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                        <ParentFormDialog parent={parent} categories={categories} onSave={fetchParents} />
+                      </DropdownMenuItem>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <button className="relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-destructive hover:text-destructive-foreground w-full text-destructive">
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            <span>Hapus</span>
+                          </button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Anda Yakin?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Menghapus induk kategori <span className="font-bold">{parent.name}</span> tidak menghapus sub-kategori atau produknya — hanya pengelompokannya. Aksi ini tidak dapat diurungkan.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Batal</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => handleDeleteParent(parent.id, parent.name)} className="bg-destructive hover:bg-destructive/90">Ya, Hapus</AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center p-6 text-muted-foreground border-2 border-dashed rounded-lg">
+              <Layers className="h-8 w-8 mx-auto mb-2" />
+              <p className="text-sm">Belum ada induk kategori.</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
