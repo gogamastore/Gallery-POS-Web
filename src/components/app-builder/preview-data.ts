@@ -25,6 +25,8 @@ export interface PreviewProduct {
   image: string;
   category: string;
   stock: number;
+  ratingAvg?: number;
+  ratingCount?: number;
 }
 
 export interface PreviewBanner {
@@ -64,6 +66,8 @@ const toProduct = (id: string, d: DocumentData): PreviewProduct => ({
   image: d.image ?? "",
   category: d.category ?? "",
   stock: Number(d.stock ?? 0) || 0,
+  ratingAvg: Number(d.ratingAvg ?? 0) || 0,
+  ratingCount: Number(d.ratingCount ?? 0) || 0,
 });
 
 const toMillis = (v: unknown): number => {

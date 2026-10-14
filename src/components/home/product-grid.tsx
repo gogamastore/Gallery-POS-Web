@@ -28,6 +28,8 @@ interface Product {
   description?: string;
   isPromo?: boolean;
   discountPrice?: string;
+  ratingAvg?: number;
+  ratingCount?: number;
   purchaseAt?: Timestamp; // waktu terakhir produk dibeli/restock (untuk urutan)
 }
 
@@ -47,7 +49,7 @@ const formatCurrency = (value: string | number): string => {
     }).format(num);
 }
 
-export default function ProductGrid({ searchTerm, category, viewMode = "grid", categories }: { searchTerm: string, category: string, viewMode?: "grid" | "list", categories?: string[] }) {
+export default function ProductGrid({ searchTerm, category, viewMode = "grid", categories, forceGrid = false }: { searchTerm: string, category: string, viewMode?: "grid" | "list", categories?: string[], forceGrid?: boolean }) {
     const [allProducts, setAllProducts] = useState<Product[]>([]);
     const [loading, setLoading] = useState(true);
     const { toast } = useToast();
@@ -205,7 +207,7 @@ export default function ProductGrid({ searchTerm, category, viewMode = "grid", c
                                     <ProductListItem key={product.id} product={product} />
                                 ))}
                             </div>
-                        ) : hasConfig ? (
+                        ) : hasConfig && !forceGrid ? (
                             <CatalogProductsView products={visibleProducts} layout={appLayout} />
                         ) : (
                             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 sm:gap-4">

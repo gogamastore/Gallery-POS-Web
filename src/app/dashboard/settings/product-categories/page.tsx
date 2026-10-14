@@ -185,12 +185,23 @@ function ParentFormDialog({
   parent,
   categories,
   onSave,
+  open,
+  onOpenChange,
+  hideTrigger = false,
 }: {
   parent?: ParentCategory;
   categories: ProductCategory[];
   onSave: () => void;
+  open?: boolean;
+  onOpenChange?: (o: boolean) => void;
+  hideTrigger?: boolean;
 }) {
-  const [isOpen, setIsOpen] = useState(false);
+  // Mode terkendali (dipakai saat dialog dibuka dari menu dropdown sebagai
+  // SIBLING, bukan anak DropdownMenuItem — agar input nama bisa diketik).
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = open !== undefined;
+  const isOpen = isControlled ? open : internalOpen;
+  const setIsOpen = (o: boolean) => (isControlled ? onOpenChange?.(o) : setInternalOpen(o));
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [name, setName] = useState('');
   const [children, setChildren] = useState<string[]>([]);
@@ -265,7 +276,7 @@ function ParentFormDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
-      <DialogTrigger asChild>{triggerButton}</DialogTrigger>
+      {!hideTrigger && <DialogTrigger asChild>{triggerButton}</DialogTrigger>}
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{parent ? 'Edit Induk Kategori' : 'Tambah Induk Kategori'}</DialogTitle>
@@ -314,6 +325,82 @@ function ParentFormDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// Satu baris induk kategori. Dialog Edit dibuka sebagai SIBLING (bukan anak
+// DropdownMenuItem) agar input nama tetap bisa diketik (hindari bug fokus Radix).
+function ParentRow({
+  parent,
+  categories,
+  onSave,
+  onDelete,
+}: {
+  parent: ParentCategory;
+  categories: ProductCategory[];
+  onSave: () => void;
+  onDelete: (id: string, name: string) => void;
+}) {
+  const [editOpen, setEditOpen] = useState(false);
+  return (
+    <div className="flex items-center justify-between rounded-lg border p-4">
+      <div className="flex items-center gap-4 min-w-0">
+        {parent.imageUrl ? (
+          <Image src={parent.imageUrl} alt={parent.name} width={36} height={36} className="h-9 w-9 rounded-md object-contain bg-muted p-1" />
+        ) : (
+          <Layers className="h-5 w-5 text-muted-foreground" />
+        )}
+        <div className="min-w-0">
+          <p className="font-medium">{parent.name}</p>
+          <p className="truncate text-xs text-muted-foreground">
+            {parent.children.length > 0 ? parent.children.join(', ') : 'Belum ada sub-kategori'}
+          </p>
+        </div>
+      </div>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon" className="h-8 w-8">
+            <MoreHorizontal className="h-4 w-4" />
+            <span className="sr-only">Menu aksi</span>
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onSelect={() => setEditOpen(true)}>
+            <Edit className="mr-2 h-4 w-4" />
+            Edit
+          </DropdownMenuItem>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <button className="relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-destructive hover:text-destructive-foreground w-full text-destructive">
+                <Trash2 className="mr-2 h-4 w-4" />
+                <span>Hapus</span>
+              </button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Anda Yakin?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Menghapus induk kategori <span className="font-bold">{parent.name}</span> tidak menghapus sub-kategori atau produknya — hanya pengelompokannya. Aksi ini tidak dapat diurungkan.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Batal</AlertDialogCancel>
+                <AlertDialogAction onClick={() => onDelete(parent.id, parent.name)} className="bg-destructive hover:bg-destructive/90">Ya, Hapus</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {/* Dialog Edit (terkendali) di luar DropdownMenu */}
+      <ParentFormDialog
+        parent={parent}
+        categories={categories}
+        onSave={onSave}
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        hideTrigger
+      />
+    </div>
   );
 }
 
@@ -416,54 +503,13 @@ export default function ProductCategoriesPage() {
           {parents.length > 0 ? (
             <div className="space-y-4">
               {parents.map((parent) => (
-                <div key={parent.id} className="flex items-center justify-between rounded-lg border p-4">
-                  <div className="flex items-center gap-4 min-w-0">
-                    {parent.imageUrl ? (
-                      <Image src={parent.imageUrl} alt={parent.name} width={36} height={36} className="h-9 w-9 rounded-md object-contain bg-muted p-1" />
-                    ) : (
-                      <Layers className="h-5 w-5 text-muted-foreground" />
-                    )}
-                    <div className="min-w-0">
-                      <p className="font-medium">{parent.name}</p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {parent.children.length > 0 ? parent.children.join(', ') : 'Belum ada sub-kategori'}
-                      </p>
-                    </div>
-                  </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8">
-                        <MoreHorizontal className="h-4 w-4" />
-                        <span className="sr-only">Menu aksi</span>
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-                        <ParentFormDialog parent={parent} categories={categories} onSave={fetchParents} />
-                      </DropdownMenuItem>
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <button className="relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-destructive hover:text-destructive-foreground w-full text-destructive">
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            <span>Hapus</span>
-                          </button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Anda Yakin?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              Menghapus induk kategori <span className="font-bold">{parent.name}</span> tidak menghapus sub-kategori atau produknya — hanya pengelompokannya. Aksi ini tidak dapat diurungkan.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Batal</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => handleDeleteParent(parent.id, parent.name)} className="bg-destructive hover:bg-destructive/90">Ya, Hapus</AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
+                <ParentRow
+                  key={parent.id}
+                  parent={parent}
+                  categories={categories}
+                  onSave={fetchParents}
+                  onDelete={handleDeleteParent}
+                />
               ))}
             </div>
           ) : (

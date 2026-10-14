@@ -142,6 +142,50 @@ function getStatusInfo(status: string) {
   return { title: `Status: ${status}`, icon: AlertCircle, color: "text-gray-600", bg: "bg-gray-50 border-gray-200" };
 }
 
+const has = (s: string, keys: string[]) => keys.some((k) => s.includes(k));
+const ON_THE_WAY = ["dropping_off", "in_transit", "on_process", "out_for_delivery", "on_the_way", "delivering"];
+const FAILED = ["cancelled", "canceled", "rejected", "failed", "not_found"];
+
+// Judul status Biteship dalam Bahasa Indonesia (mengikuti halaman tracking Biteship).
+function biteshipStatusLabel(status?: string): string {
+  const s = (status ?? "").toLowerCase();
+  if (!s) return "Memproses…";
+  if (s.includes("confirmed")) return "Permintaan Pengiriman Telah Diterima";
+  if (has(s, ["allocating", "waiting"])) return "Mencari Kurir";
+  if (s.includes("allocated")) return "Permintaan Pengiriman Telah Diterima";
+  if (s.includes("picking_up") || s === "pickup") return "Pesanan Sedang Proses Penjemputan";
+  if (s.includes("picked")) return "Pesanan Telah Dijemput";
+  if (has(s, ON_THE_WAY)) return "Pesanan Sedang Dalam Perjalanan";
+  if (s.includes("delivered")) return "Pesanan Telah Sampai Tujuan";
+  if (s.includes("hold")) return "Pengiriman Tertunda";
+  if (s.includes("return")) return "Paket Dikembalikan";
+  if (has(s, FAILED)) return "Pengiriman Gagal / Dibatalkan";
+  return status ?? "";
+}
+
+// Keterangan status dalam Bahasa Indonesia (dipakai bila Biteship tak mengirim catatan).
+function biteshipStatusDesc(status?: string): string {
+  const s = (status ?? "").toLowerCase();
+  if (s.includes("confirmed")) return "Pesanan kurir dikonfirmasi. Kurir telah diberi tahu untuk menjemput.";
+  if (has(s, ["allocating", "waiting"])) return "Sedang mencari kurir terdekat.";
+  if (s.includes("allocated")) return "Kurir telah dialokasikan. Menunggu dijemput.";
+  if (s.includes("picking_up") || s === "pickup") return "Kurir sedang menuju lokasi penjemputan.";
+  if (s.includes("picked")) return "Paket telah dijemput kurir.";
+  if (has(s, ON_THE_WAY)) return "Paket sedang menuju alamat tujuan.";
+  if (s.includes("delivered")) return "Paket telah sampai di tujuan.";
+  if (s.includes("hold")) return "Pengiriman tertunda sementara.";
+  if (s.includes("return")) return "Paket dikembalikan ke pengirim.";
+  if (has(s, FAILED)) return "Pengiriman dibatalkan atau gagal.";
+  return "";
+}
+
+// Format waktu Biteship (ISO) → "d MMM HH:mm" lokal; fallback ke string asli.
+function formatTrackTime(ts: string): string {
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return ts;
+  return d.toLocaleString("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
 function paymentLabel(ps: string): string {
   switch (ps.toLowerCase()) {
     case "paid":            return "Lunas";
@@ -532,7 +576,7 @@ export default function OrderDetailPage() {
                 <p className="font-semibold text-sm">Riwayat Tracking</p>
                 {trackingResult.status && (
                   <Badge variant="secondary" className="text-xs">
-                    {trackingResult.status.toUpperCase()}
+                    {biteshipStatusLabel(trackingResult.status)}
                   </Badge>
                 )}
               </div>
@@ -560,9 +604,9 @@ export default function OrderDetailPage() {
                             )}
                           </div>
                           <div className="pb-2">
-                            <p className="text-sm font-medium">{h.status}</p>
-                            {h.note && <p className="text-xs text-muted-foreground">{h.note}</p>}
-                            <p className="text-xs text-muted-foreground">{h.timestamp}</p>
+                            <p className="text-sm font-medium">{biteshipStatusLabel(h.status)}</p>
+                            <p className="text-xs text-muted-foreground">{h.note || biteshipStatusDesc(h.status)}</p>
+                            <p className="text-xs text-muted-foreground">{formatTrackTime(h.timestamp)}</p>
                           </div>
                         </div>
                       ))}

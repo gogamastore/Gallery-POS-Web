@@ -417,6 +417,12 @@ function CardSettings({
         <SwitchField label="Tampilkan Harga" checked={card.showPrice} onChange={(showPrice) => setCard({ showPrice })} />
         <SwitchField label="Tampilkan Stok" checked={card.showStock} onChange={(showStock) => setCard({ showStock })} />
         <SwitchField
+          label="Tampilkan Rating"
+          hint="Rata-rata bintang + jumlah ulasan pembeli"
+          checked={card.showRating}
+          onChange={(showRating) => setCard({ showRating })}
+        />
+        <SwitchField
           label="Badge Diskon (-%)"
           checked={card.showDiscountBadge}
           onChange={(showDiscountBadge) => setCard({ showDiscountBadge })}
@@ -838,6 +844,15 @@ function StyleSettings({ style, onChange }: { style: BlockStyle; onChange: (s: B
   const set = (patch: Partial<BlockStyle>) => onChange({ ...style, ...patch });
   return (
     <div className="space-y-3">
+      <Section title="Judul">
+        <ColorField
+          label="Warna Judul"
+          value={style.titleColor}
+          allowEmpty
+          emptyLabel="Default"
+          onChange={(titleColor) => set({ titleColor })}
+        />
+      </Section>
       <Section title="Jarak">
         <SliderField label="Margin Atas" value={style.marginTop} min={0} max={80} onChange={(marginTop) => set({ marginTop })} />
         <SliderField label="Margin Bawah" value={style.marginBottom} min={0} max={80} onChange={(marginBottom) => set({ marginBottom })} />

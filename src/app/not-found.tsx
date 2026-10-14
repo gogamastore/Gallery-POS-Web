@@ -13,9 +13,6 @@ export default function NotFound() {
         Maaf, halaman yang Anda cari tidak ada atau mungkin telah dipindahkan.
       </p>
       <div className="flex gap-4">
-        <Button asChild>
-          <Link href="/dashboard">Kembali ke Dashboard</Link>
-        </Button>
          <Button variant="outline" asChild>
           <Link href="/reseller">Kembali ke Halaman Reseller</Link>
         </Button>

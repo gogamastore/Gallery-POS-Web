@@ -63,6 +63,8 @@ export interface BlockStyle {
   bgColor: string;
   bgImageUrl: string;
   radius: number;
+  /** Warna teks judul seksi blok. Kosong = warna default (teks tema). */
+  titleColor: string;
 }
 
 export interface ProductCardStyle {
@@ -78,6 +80,8 @@ export interface ProductCardStyle {
   showStock: boolean;
   showDiscountBadge: boolean;
   showCartButton: boolean;
+  /** Tampilkan rata-rata bintang + jumlah ulasan pada kartu produk. */
+  showRating: boolean;
   cardColor: string;
   shadowEnabled: boolean;
   shadowBlur: number;
@@ -267,6 +271,7 @@ export const DEFAULT_STYLE: BlockStyle = {
   bgColor: "",
   bgImageUrl: "",
   radius: 0,
+  titleColor: "",
 };
 
 export const DEFAULT_CARD: ProductCardStyle = {
@@ -282,6 +287,7 @@ export const DEFAULT_CARD: ProductCardStyle = {
   showStock: true,
   showDiscountBadge: true,
   showCartButton: false,
+  showRating: false,
   cardColor: "",
   shadowEnabled: true,
   shadowBlur: 8,

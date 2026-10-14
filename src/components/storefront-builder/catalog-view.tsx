@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element */
 import Link from "next/link";
-import { ChevronRight, Loader2, Package, ShoppingCart } from "lucide-react";
+import { ChevronRight, Loader2, Package, ShoppingCart, Star } from "lucide-react";
 import { useCart } from "@/hooks/use-cart";
 import { useToast } from "@/hooks/use-toast";
 import type { AppLayout, ProductCardStyle } from "@/components/app-builder/schema";
@@ -27,6 +27,8 @@ export interface CatalogProduct {
   stock: number;
   isPromo?: boolean;
   discountPrice?: string;
+  ratingAvg?: number;
+  ratingCount?: number;
 }
 
 const rupiahFormat = new Intl.NumberFormat("id-ID", {
@@ -152,6 +154,15 @@ function CatalogCard({
               }}
             >
               {p.name}
+            </div>
+          )}
+          {style.showRating && (p.ratingCount ?? 0) > 0 && (
+            <div
+              className={`flex items-center gap-1 text-[11px] text-gray-600 ${isSimple ? "justify-center" : ""}`}
+            >
+              <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+              <span className="font-semibold">{(p.ratingAvg ?? 0).toFixed(1)}</span>
+              <span>({p.ratingCount})</span>
             </div>
           )}
           {style.showStock && (

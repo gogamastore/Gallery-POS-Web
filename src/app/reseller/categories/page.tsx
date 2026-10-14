@@ -117,7 +117,7 @@ function CategoriesInner() {
         {!loading && parentId && childNames.length > 0 && (
           <div className="mt-8">
             <h2 className="text-lg font-bold md:text-xl">Produk {title}</h2>
-            <ProductGrid searchTerm="" category="Semua" categories={childNames} />
+            <ProductGrid searchTerm="" category="Semua" categories={childNames} forceGrid />
           </div>
         )}
       </div>

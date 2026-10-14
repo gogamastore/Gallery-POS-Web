@@ -13,6 +13,7 @@ import {
   Search,
   ShoppingBag,
   ShoppingCart,
+  Star,
   Store,
   User,
 } from "lucide-react";
@@ -237,6 +238,16 @@ function PInfo({
           }}
         >
           {p.name}
+        </div>
+      )}
+      {style.showRating && (p.ratingCount ?? 0) > 0 && (
+        <div
+          className="flex items-center gap-1"
+          style={{ fontSize: small, color: "#4b5563", justifyContent: centered ? "center" : "flex-start" }}
+        >
+          <Star className="h-3 w-3" style={{ fill: "#fbbf24", color: "#fbbf24" }} />
+          <span style={{ fontWeight: 600, color: "#1f2937" }}>{(p.ratingAvg ?? 0).toFixed(1)}</span>
+          <span>({p.ratingCount})</span>
         </div>
       )}
       {style.showStock && (
@@ -597,7 +608,7 @@ function Frame({ block, children, seeAll }: { block: HomeBlock; children: React.
     >
       {(title || showSeeAll) && (
         <div className="flex items-center justify-between gap-2" style={{ padding: `0 ${s.paddingH}px 8px` }}>
-          <span className="truncate" style={{ fontSize: 18, fontWeight: 700 }}>
+          <span className="truncate" style={{ fontSize: 18, fontWeight: 700, color: s.titleColor || undefined }}>
             {title}
           </span>
           {showSeeAll && (
@@ -719,6 +730,7 @@ function BrandsBlock({ block, data }: { block: HomeBlock<"brands">; data: Previe
   if (!data.brands.length) return <EmptyBlock block={block} message="belum ada brand." />;
   const circle = c.style === "circle";
   const size = c.itemSize;
+  const titleColor = block.style.titleColor || undefined;
   return (
     <Frame block={block} seeAll>
       <div className="flex gap-2 overflow-x-auto" style={{ ...hideScrollbar, padding: `0 ${block.style.paddingH}px` }}>
@@ -731,7 +743,7 @@ function BrandsBlock({ block, data }: { block: HomeBlock<"brands">; data: Previe
               >
                 {b.logoUrl && <img src={b.logoUrl} alt="" className="h-full w-full rounded-full object-contain" />}
               </div>
-              <span className="mt-1 w-full truncate text-center" style={{ fontSize: 11 }}>
+              <span className="mt-1 w-full truncate text-center" style={{ fontSize: 11, color: titleColor }}>
                 {b.name}
               </span>
             </div>
@@ -744,7 +756,7 @@ function BrandsBlock({ block, data }: { block: HomeBlock<"brands">; data: Previe
               <div className="min-h-0 flex-1 p-2">
                 {b.logoUrl && <img src={b.logoUrl} alt="" className="h-full w-full object-contain" />}
               </div>
-              <span className="truncate px-1 pb-2 text-center" style={{ fontSize: 13 }}>
+              <span className="truncate px-1 pb-2 text-center" style={{ fontSize: 13, color: titleColor }}>
                 {b.name}
               </span>
             </div>
@@ -758,6 +770,7 @@ function BrandsBlock({ block, data }: { block: HomeBlock<"brands">; data: Previe
 function CategoriesBlock({ block, data }: { block: HomeBlock<"categories">; data: PreviewData }) {
   const t = useTheme();
   const c: CategoriesBlockConfig = block.config;
+  const titleColor = block.style.titleColor || undefined;
 
   // Gaya "Gambar (geser)" — kartu manual dari config.items.
   if (c.style === "imageSlider") {
@@ -782,7 +795,7 @@ function CategoriesBlock({ block, data }: { block: HomeBlock<"categories">; data
                   </div>
                 )}
               </div>
-              <span className="mt-1.5 line-clamp-2 text-center" style={{ fontSize: 11, lineHeight: 1.2 }}>
+              <span className="mt-1.5 line-clamp-2 text-center" style={{ fontSize: 11, lineHeight: 1.2, color: titleColor }}>
                 {it.name}
               </span>
             </div>
@@ -802,7 +815,7 @@ function CategoriesBlock({ block, data }: { block: HomeBlock<"categories">; data
       >
         {name.charAt(0).toUpperCase()}
       </div>
-      <span className="mt-1.5 line-clamp-2 text-center" style={{ fontSize: 11, lineHeight: 1.2 }}>
+      <span className="mt-1.5 line-clamp-2 text-center" style={{ fontSize: 11, lineHeight: 1.2, color: titleColor }}>
         {name}
       </span>
     </div>
@@ -830,7 +843,7 @@ function CategoriesBlock({ block, data }: { block: HomeBlock<"categories">; data
             <span
               key={n}
               className="flex h-9 shrink-0 items-center whitespace-nowrap rounded-full bg-white px-3.5"
-              style={{ border: `1px solid ${hexToRgba(t.primary, 0.35)}`, color: t.primary, fontSize: 13, fontWeight: 500 }}
+              style={{ border: `1px solid ${hexToRgba(t.primary, 0.35)}`, color: titleColor || t.primary, fontSize: 13, fontWeight: 500 }}
             >
               {n}
             </span>
@@ -844,6 +857,7 @@ function CategoriesBlock({ block, data }: { block: HomeBlock<"categories">; data
 function ParentCategoriesBlock({ block, data }: { block: HomeBlock<"parentCategories">; data: PreviewData }) {
   const t = useTheme();
   const c = block.config;
+  const titleColor = block.style.titleColor || undefined;
   const parents = orderParents(data.parents.filter((p) => p.name), c.order).slice(0, c.limit);
   if (!parents.length) return <EmptyBlock block={block} message="belum ada induk kategori." />;
 
@@ -859,7 +873,7 @@ function ParentCategoriesBlock({ block, data }: { block: HomeBlock<"parentCatego
           p.name.charAt(0).toUpperCase()
         )}
       </div>
-      <span className="mt-1.5 line-clamp-2 text-center" style={{ fontSize: 11, lineHeight: 1.2 }}>
+      <span className="mt-1.5 line-clamp-2 text-center" style={{ fontSize: 11, lineHeight: 1.2, color: titleColor }}>
         {p.name}
       </span>
     </div>
@@ -887,7 +901,7 @@ function ParentCategoriesBlock({ block, data }: { block: HomeBlock<"parentCatego
                   </div>
                 )}
               </div>
-              <span className="mt-1.5 line-clamp-2 text-center" style={{ fontSize: 11, lineHeight: 1.2 }}>
+              <span className="mt-1.5 line-clamp-2 text-center" style={{ fontSize: 11, lineHeight: 1.2, color: titleColor }}>
                 {p.name}
               </span>
             </div>
@@ -913,7 +927,7 @@ function ParentCategoriesBlock({ block, data }: { block: HomeBlock<"parentCatego
             <span
               key={p.id}
               className="flex h-9 shrink-0 items-center whitespace-nowrap rounded-full bg-white px-3.5"
-              style={{ border: `1px solid ${hexToRgba(t.primary, 0.35)}`, color: t.primary, fontSize: 13, fontWeight: 500 }}
+              style={{ border: `1px solid ${hexToRgba(t.primary, 0.35)}`, color: titleColor || t.primary, fontSize: 13, fontWeight: 500 }}
             >
               {p.name}
             </span>

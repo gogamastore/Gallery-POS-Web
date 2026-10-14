@@ -5,9 +5,10 @@ import Image from "next/image";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { ShoppingCart, Loader2 } from "lucide-react";
+import { ShoppingCart, Loader2, Star } from "lucide-react";
 import { useCart } from "@/hooks/use-cart";
 import { useToast } from "@/hooks/use-toast";
+import { useAppLayout } from "@/components/storefront-builder/use-app-layout";
 import Link from "next/link";
 
 interface Product {
@@ -20,6 +21,8 @@ interface Product {
   description?: string;
   isPromo?: boolean;
   discountPrice?: string;
+  ratingAvg?: number;
+  ratingCount?: number;
 }
 
 const formatCurrency = (value: string | number): string => {
@@ -34,6 +37,9 @@ const formatCurrency = (value: string | number): string => {
 export default function ProductCard({ product, showStockProgress = false }: { product: Product, showStockProgress?: boolean }) {
   const { addToCart, loading: cartLoading } = useCart();
   const { toast } = useToast();
+  // Rating ditampilkan sesuai toggle "Tampilkan Rating" di App Builder (katalog).
+  const { layout } = useAppLayout();
+  const showRating = layout.catalog.card.showRating && (product.ratingCount ?? 0) > 0;
 
   const handleAddToCart = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
@@ -77,6 +83,13 @@ export default function ProductCard({ product, showStockProgress = false }: { pr
            <Link href={`/reseller/products/${product.id}`}>
               <h3 className="font-semibold text-sm leading-tight line-clamp-2 cursor-pointer hover:text-primary">{product.name}</h3>
           </Link>
+          {showRating && (
+            <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+              <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+              <span className="font-semibold text-foreground">{(product.ratingAvg ?? 0).toFixed(1)}</span>
+              <span>({product.ratingCount})</span>
+            </div>
+          )}
           <div className="mt-2">
             {product.isPromo && (
                  <p className="text-xs text-muted-foreground line-through">{formatCurrency(product.price)}</p>

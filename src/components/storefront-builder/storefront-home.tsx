@@ -3,7 +3,7 @@
 /* eslint-disable @next/next/no-img-element */
 import { createContext, useContext, useEffect } from "react";
 import Link from "next/link";
-import { ChevronRight, Loader2, Package, Search, ShoppingBag, Store } from "lucide-react";
+import { ChevronRight, Loader2, Package, Search, ShoppingBag, Star, Store } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   CATEGORY_SLIDER_MAX,
@@ -194,6 +194,13 @@ function ProductCard({
           {p.name}
         </div>
       )}
+      {style.showRating && (p.ratingCount ?? 0) > 0 && (
+        <div className={cn("flex items-center gap-1 text-[11px] text-gray-600", isSimple && "justify-center")}>
+          <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+          <span className="font-semibold text-gray-800">{(p.ratingAvg ?? 0).toFixed(1)}</span>
+          <span>({p.ratingCount})</span>
+        </div>
+      )}
       {style.showStock && (
         <div className="text-[11px] font-semibold" style={{ color: out ? "#b91c1c" : "#15803d" }}>
           {out ? "Stok Habis" : `Stok: ${p.stock}`}
@@ -289,7 +296,7 @@ function Frame({
     >
       {(title || showSeeAll) && (
         <div className="mb-2 flex items-center justify-between gap-2" style={{ padding: `0 ${s.paddingH}px` }}>
-          <h2 className="truncate text-lg font-bold md:text-xl">{title}</h2>
+          <h2 className="truncate text-lg font-bold md:text-xl" style={{ color: s.titleColor || undefined }}>{title}</h2>
           {showSeeAll && (
             <Link href={seeAllHref!} className="flex shrink-0 items-center gap-0.5 text-sm font-medium" style={{ color: t.primary }}>
               Lihat Semua <ChevronRight className="h-4 w-4" />
@@ -473,6 +480,7 @@ function BrandsBlock({ block, data }: { block: HomeBlock<"brands">; data: Previe
   if (!data.brands.length) return null;
   const circle = c.style === "circle";
   const size = c.itemSize;
+  const titleColor = block.style.titleColor || undefined;
   return (
     <Frame block={block} seeAllHref="/reseller/brands">
       <div className="flex gap-3 overflow-x-auto pb-1" style={{ padding: `0 ${block.style.paddingH}px`, scrollbarWidth: "none" }}>
@@ -495,7 +503,7 @@ function BrandsBlock({ block, data }: { block: HomeBlock<"brands">; data: Previe
                 {b.logoUrl && <img src={b.logoUrl} alt={b.name} loading="lazy" className="h-full w-full object-contain" />}
               </div>
             )}
-            <span className="mt-1 w-full truncate px-1 text-center text-[11px]">{b.name}</span>
+            <span className="mt-1 w-full truncate px-1 text-center text-[11px]" style={{ color: titleColor }}>{b.name}</span>
           </Link>
         ))}
       </div>
@@ -508,6 +516,7 @@ function CategoriesBlock({ block, data }: { block: HomeBlock<"categories">; data
   const t = useTheme();
   const c: CategoriesBlockConfig = block.config;
   const pad = block.style.paddingH;
+  const titleColor = block.style.titleColor || undefined;
 
   // Gaya "Gambar (geser)": kartu manual dengan gambar yang diunggah admin.
   if (c.style === "imageSlider") {
@@ -539,7 +548,7 @@ function CategoriesBlock({ block, data }: { block: HomeBlock<"categories">; data
                   </div>
                 )}
               </div>
-              <span className="mt-1.5 line-clamp-2 w-full text-center text-[11px] leading-tight">{it.name}</span>
+              <span className="mt-1.5 line-clamp-2 w-full text-center text-[11px] leading-tight" style={{ color: titleColor }}>{it.name}</span>
             </Link>
           ))}
         </div>
@@ -557,7 +566,7 @@ function CategoriesBlock({ block, data }: { block: HomeBlock<"categories">; data
       >
         {name.charAt(0).toUpperCase()}
       </div>
-      <span className="mt-1.5 line-clamp-2 text-center text-[11px] leading-tight">{name}</span>
+      <span className="mt-1.5 line-clamp-2 text-center text-[11px] leading-tight" style={{ color: titleColor }}>{name}</span>
     </Link>
   );
   return (
@@ -586,7 +595,7 @@ function CategoriesBlock({ block, data }: { block: HomeBlock<"categories">; data
               key={n}
               href={`/reseller/products?category=${encodeURIComponent(n)}`}
               className="flex h-9 items-center whitespace-nowrap rounded-full bg-white px-3.5 text-sm font-medium"
-              style={{ border: `1px solid ${hexToRgba(t.primary, 0.35)}`, color: t.primary }}
+              style={{ border: `1px solid ${hexToRgba(t.primary, 0.35)}`, color: titleColor || t.primary }}
             >
               {n}
             </Link>
@@ -603,6 +612,7 @@ function ParentCategoriesBlock({ block, data }: { block: HomeBlock<"parentCatego
   const c = block.config;
   const pad = block.style.paddingH;
   const size = clamp(c.itemSize || 64, 36, 140);
+  const titleColor = block.style.titleColor || undefined;
   const parents = orderParents(data.parents.filter((p) => p.name), c.order).slice(0, c.limit);
   if (!parents.length) return null;
 
@@ -626,7 +636,7 @@ function ParentCategoriesBlock({ block, data }: { block: HomeBlock<"parentCatego
                   </div>
                 )}
               </div>
-              <span className="mt-1.5 line-clamp-2 w-full text-center text-[11px] leading-tight">{p.name}</span>
+              <span className="mt-1.5 line-clamp-2 w-full text-center text-[11px] leading-tight" style={{ color: titleColor }}>{p.name}</span>
             </Link>
           ))}
         </div>
@@ -649,7 +659,7 @@ function ParentCategoriesBlock({ block, data }: { block: HomeBlock<"parentCatego
           </span>
         )}
       </div>
-      <span className="mt-1.5 line-clamp-2 text-center text-[11px] leading-tight">{p.name}</span>
+      <span className="mt-1.5 line-clamp-2 text-center text-[11px] leading-tight" style={{ color: titleColor }}>{p.name}</span>
     </Link>
   );
 
@@ -671,7 +681,7 @@ function ParentCategoriesBlock({ block, data }: { block: HomeBlock<"parentCatego
               key={p.id}
               href={`/reseller/categories?parent=${p.id}`}
               className="flex h-9 shrink-0 items-center whitespace-nowrap rounded-full bg-white px-3.5 text-sm font-medium"
-              style={{ border: `1px solid ${hexToRgba(t.primary, 0.35)}`, color: t.primary }}
+              style={{ border: `1px solid ${hexToRgba(t.primary, 0.35)}`, color: titleColor || t.primary }}
             >
               {p.name}
             </Link>

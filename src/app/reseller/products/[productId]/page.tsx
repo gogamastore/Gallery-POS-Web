@@ -17,6 +17,7 @@ import { useCart } from "@/hooks/use-cart";
 import { useAuth } from "@/hooks/use-auth";
 import { sendChatMessage } from "@/lib/chat";
 import { productChatMessage } from "@/lib/contact-admin";
+import ProductReviews from "@/components/reseller/product-reviews";
 import {
   Loader2,
   ChevronLeft,
@@ -46,6 +47,8 @@ interface Product {
   weightGram?: number;
   isPromo?: boolean;
   discountPrice?: string;
+  ratingAvg?: number;
+  ratingCount?: number;
 }
 
 interface Promotion {
@@ -231,15 +234,24 @@ export default function ProductDetailPage() {
                         )}
                         <h1 className="text-2xl sm:text-3xl font-bold font-headline leading-tight">{product.name}</h1>
                         <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                            <span className="flex items-center gap-1 text-amber-500">
-                                <Star className="h-4 w-4 fill-amber-400 stroke-amber-400" />
-                                <Star className="h-4 w-4 fill-amber-400 stroke-amber-400" />
-                                <Star className="h-4 w-4 fill-amber-400 stroke-amber-400" />
-                                <Star className="h-4 w-4 fill-amber-400 stroke-amber-400" />
-                                <Star className="h-4 w-4 fill-amber-400 stroke-amber-400" />
+                            <span className="flex items-center gap-0.5">
+                                {Array.from({ length: 5 }).map((_, i) => (
+                                    <Star
+                                        key={i}
+                                        className={`h-4 w-4 ${
+                                            i < Math.round(product.ratingAvg ?? 0)
+                                                ? "fill-amber-400 stroke-amber-400"
+                                                : "fill-none stroke-muted-foreground/40"
+                                        }`}
+                                    />
+                                ))}
                             </span>
                             <span>·</span>
-                            <span>Terjual banyak</span>
+                            <span>
+                                {(product.ratingCount ?? 0) > 0
+                                    ? `${(product.ratingAvg ?? 0).toFixed(1)} (${product.ratingCount} ulasan)`
+                                    : "Belum ada ulasan"}
+                            </span>
                             {product.sku && (
                                 <>
                                     <span>·</span>
@@ -389,6 +401,13 @@ export default function ProductDetailPage() {
                         </AccordionContent>
                     </AccordionItem>
                 </Accordion>
+
+                <Separator className="my-4" />
+                <ProductReviews
+                    productId={product.id}
+                    ratingAvg={product.ratingAvg ?? 0}
+                    ratingCount={product.ratingCount ?? 0}
+                />
             </div>
         </div>
 

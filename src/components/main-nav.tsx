@@ -18,6 +18,7 @@ import {
   MapPin,
   MessageSquare,
   Truck,
+  Star,
   CreditCard,
   Bell,
   SquarePen,
@@ -36,6 +37,7 @@ const navItems = [
   { href: "/dashboard/products", label: "Manajemen Produk", icon: Package },
   { href: "/dashboard/stock-management", label: "Manajemen Stok", icon: Warehouse },
   { href: "/dashboard/purchases", label: "Transaksi Pembelian", icon: Archive },
+  { href: "/dashboard/reviews", label: "Ulasan Pembeli", icon: Star },
   { href: "/dashboard/operational-costs", label: "Biaya Operasional", icon: ClipboardList },
 ];
 
