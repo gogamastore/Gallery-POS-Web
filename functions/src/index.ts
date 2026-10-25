@@ -6,3 +6,4 @@ export { searchBiteshipArea, getBiteshipRates, getBiteshipCouriers, createBitesh
 export { checkExpiredOrders } from "./midtrans";
 export { sendWhatsappOtp, verifyWhatsappOtp } from "./whatsapp";
 export { onReviewWritten } from "./reviews";
+export { onOrderWritten } from "./sales";

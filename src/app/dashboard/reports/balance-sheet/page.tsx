@@ -59,10 +59,11 @@ const getMonthOptions = () => {
   return options;
 };
 
-// Define fixed values
+// Modal awal (ekuitas pemilik di awal usaha). Kas & Bank TIDAK lagi di-hardcode:
+// nilainya dihitung sebagai pos penyeimbang dari identitas
+// Aset = Liabilitas + Ekuitas, sehingga neraca selalu seimbang.
+// Ganti angka ini dengan modal awal riil usaha Anda.
 const INITIAL_OWNER_CAPITAL = 200000000;
-const INITIAL_CASH = 50000000;
-const INITIAL_BANK = 120000000;
 
 
 export default function BalanceSheetPage() {
@@ -74,8 +75,7 @@ export default function BalanceSheetPage() {
   const [reportData, setReportData] = useState({
     assets: {
       currentAssets: {
-        cash: INITIAL_CASH,
-        bank: INITIAL_BANK,
+        cashBank: 0,
         receivables: 0,
         inventory: 0,
         total: 0,
@@ -97,6 +97,8 @@ export default function BalanceSheetPage() {
       },
       total: 0,
     },
+    // Kontrol: Total Aktiva − Total Pasiva (harus 0 bila seimbang).
+    balanceDifference: 0,
   });
 
   const generateReport = useCallback(async (month: string) => {
@@ -110,7 +112,9 @@ export default function BalanceSheetPage() {
         const receivablesQuery = query(
             collection(db, "orders"),
             where("paymentStatus", "==", "Unpaid"),
-            where("status", "in", ["Shipped", "Delivered"]),
+            // Piutang = pesanan terkirim/selesai yang belum dibayar (dua ejaan
+            // agar marketplace 'delivered'/'shipped' huruf kecil ikut terhitung).
+            where("status", "in", ["Shipped", "shipped", "Delivered", "delivered"]),
             where("date", "<=", Timestamp.fromDate(endDate))
         );
         const receivablesSnapshot = await getDocs(receivablesQuery);
@@ -140,8 +144,11 @@ export default function BalanceSheetPage() {
         
         // 4. Retained Earnings (Laba Ditahan) - Kumulatif hingga akhir bulan terpilih
         const revenueQuery = query(
-            collection(db, "orders"), 
-            where("status", "in", ["Shipped", "Delivered"]),
+            collection(db, "orders"),
+            // Laba ditahan = penjualan TEREALISASI kumulatif: terkirim/selesai
+            // (dua ejaan) + POS 'success'. Pesanan 'Processing' (tervalidasi tapi
+            // belum terkirim) sengaja TIDAK diakui sebagai laba di neraca.
+            where("status", "in", ["Shipped", "shipped", "Delivered", "delivered", "success"]),
             where("date", "<=", Timestamp.fromDate(endDate))
         );
         const expensesQuery = query(
@@ -166,36 +173,49 @@ export default function BalanceSheetPage() {
         const productPurchasePrices = new Map<string, number>();
         for (const orderDoc of revenueSnapshot.docs) {
             const orderData = orderDoc.data();
-            for (const item of orderData.products) {
+            for (const item of orderData.products || []) {
+                const qty = item.quantity || 0;
+                // HPP = SNAPSHOT modal saat validasi (products[].purchasePrice)
+                // bila ada; jika tidak, harga beli produk saat ini — konsisten
+                // dengan Laporan Penjualan / Laba-Rugi.
+                if (typeof item.purchasePrice === 'number') {
+                    totalCogs += item.purchasePrice * qty;
+                    continue;
+                }
                 let purchasePrice = productPurchasePrices.get(item.productId);
                 if (purchasePrice === undefined) {
                     const productRef = doc(db, "products", item.productId);
                     const productSnap = await getDoc(productRef);
-                    if (productSnap.exists()) {
-                        purchasePrice = productSnap.data().purchasePrice || 0;
-                        productPurchasePrices.set(item.productId, purchasePrice);
-                    } else {
-                        purchasePrice = 0; // Product might be deleted
-                    }
+                    const pdata = productSnap.data();
+                    purchasePrice = (pdata && typeof pdata.purchasePrice === 'number') ? pdata.purchasePrice : 0;
+                    productPurchasePrices.set(item.productId, purchasePrice);
                 }
-                totalCogs += purchasePrice * item.quantity;
+                totalCogs += purchasePrice * qty;
             }
         }
         
         const retainedEarnings = totalRevenue - totalCogs - totalExpenses;
         
         // --- SUMMARIZE ---
-        const totalCurrentAssets = INITIAL_CASH + INITIAL_BANK + totalReceivables + totalInventoryValue;
-        const totalFixedAssets = 0; // Placeholder
-        const totalAssets = totalCurrentAssets + totalFixedAssets;
-        
         const totalLiabilities = totalPayables;
         const totalEquity = INITIAL_OWNER_CAPITAL + retainedEarnings;
         const totalLiabilitiesAndEquity = totalLiabilities + totalEquity;
 
+        // Kas & Bank = pos penyeimbang dari identitas Aset = Liabilitas + Ekuitas:
+        //   Kas&Bank = Modal Awal + Laba Ditahan + Utang − Piutang − Persediaan.
+        // Dengan ini Total Aktiva selalu = Total Pasiva.
+        const cashAndBank =
+            totalLiabilitiesAndEquity - totalReceivables - totalInventoryValue;
+        const totalFixedAssets = 0; // Placeholder
+        const totalCurrentAssets =
+            cashAndBank + totalReceivables + totalInventoryValue;
+        const totalAssets = totalCurrentAssets + totalFixedAssets;
+        // Kontrol keseimbangan (harus 0 by construction).
+        const balanceDifference = Math.round(totalAssets - totalLiabilitiesAndEquity);
+
         setReportData({
             assets: {
-                currentAssets: { cash: INITIAL_CASH, bank: INITIAL_BANK, receivables: totalReceivables, inventory: totalInventoryValue, total: totalCurrentAssets },
+                currentAssets: { cashBank: cashAndBank, receivables: totalReceivables, inventory: totalInventoryValue, total: totalCurrentAssets },
                 fixedAssets: { total: totalFixedAssets },
                 total: totalAssets,
             },
@@ -203,7 +223,8 @@ export default function BalanceSheetPage() {
                 liabilities: { tradePayables: totalPayables, total: totalLiabilities },
                 equity: { initialCapital: INITIAL_OWNER_CAPITAL, retainedEarnings, total: totalEquity },
                 total: totalLiabilitiesAndEquity,
-            }
+            },
+            balanceDifference,
         });
 
     } catch (error) {
@@ -226,24 +247,24 @@ export default function BalanceSheetPage() {
         [],
         ["AKTIVA", "Jumlah", "", "PASIVA", "Jumlah"],
         ["Aset Lancar", "", "", "Kewajiban (Liabilitas)", ""],
-        ["  Kas", reportData.assets.currentAssets.cash, "", "  Utang Dagang", reportData.liabilitiesAndEquity.liabilities.tradePayables],
-        ["  Bank", reportData.assets.currentAssets.bank, "", "Total Kewajiban", reportData.liabilitiesAndEquity.liabilities.total],
-        ["  Piutang Usaha", reportData.assets.currentAssets.receivables, "", "", ""],
-        ["  Persediaan", reportData.assets.currentAssets.inventory, "", "Ekuitas (Modal)", ""],
-        ["Total Aset Lancar", reportData.assets.currentAssets.total, "", "  Modal Awal", reportData.liabilitiesAndEquity.equity.initialCapital],
-        ["", "", "", "  Laba Ditahan", reportData.liabilitiesAndEquity.equity.retainedEarnings],
-        ["Aset Tetap", "", "", "Total Ekuitas", reportData.liabilitiesAndEquity.equity.total],
-        ["Total Aset Tetap", reportData.assets.fixedAssets.total, "", "", ""],
+        ["  Kas & Bank", reportData.assets.currentAssets.cashBank, "", "  Utang Dagang", reportData.liabilitiesAndEquity.liabilities.tradePayables],
+        ["  Piutang Usaha", reportData.assets.currentAssets.receivables, "", "Total Kewajiban", reportData.liabilitiesAndEquity.liabilities.total],
+        ["  Persediaan", reportData.assets.currentAssets.inventory, "", "", ""],
+        ["Total Aset Lancar", reportData.assets.currentAssets.total, "", "Ekuitas (Modal)", ""],
+        ["", "", "", "  Modal Awal", reportData.liabilitiesAndEquity.equity.initialCapital],
+        ["Aset Tetap", "", "", "  Laba Ditahan", reportData.liabilitiesAndEquity.equity.retainedEarnings],
+        ["Total Aset Tetap", reportData.assets.fixedAssets.total, "", "Total Ekuitas", reportData.liabilitiesAndEquity.equity.total],
         [],
-        ["TOTAL AKTIVA", reportData.assets.total, "", "TOTAL PASIVA", reportData.liabilitiesAndEquity.total]
+        ["TOTAL AKTIVA", reportData.assets.total, "", "TOTAL PASIVA", reportData.liabilitiesAndEquity.total],
+        ["Selisih (harus Rp 0)", reportData.balanceDifference]
     ];
-    
+
     const worksheet = XLSX.utils.aoa_to_sheet(data);
 
     // Apply currency format to number columns
     worksheet["!cols"] = [{ wch: 25 }, { wch: 15 }, { wch: 5 }, { wch: 25 }, { wch: 15 }];
     const currencyFormat = '"Rp"#,##0;\\-"Rp"#,##0';
-    const numberCells = ["B6", "B7", "B8", "B9", "B10", "B13", "B15", "E6", "E7", "E10", "E11", "E12", "E15"];
+    const numberCells = ["B6", "B7", "B8", "B9", "B12", "B14", "B15", "E6", "E7", "E10", "E11", "E12", "E14"];
     numberCells.forEach(cell => {
         if(worksheet[cell]) {
             worksheet[cell].t = 'n'; // Set cell type to number
@@ -252,11 +273,11 @@ export default function BalanceSheetPage() {
     });
 
     // Styling headers
-    ["A1", "A4", "D4", "B10", "B13", "B15", "E7", "E12", "E15"].forEach(cell => {
+    ["A1", "A4", "D4", "A9", "B9", "E7", "A12", "B12", "E12", "A14", "B14", "D14", "E14", "A15", "B15"].forEach(cell => {
         if(worksheet[cell]) worksheet[cell].s = { font: { bold: true } };
     });
-    
-    worksheet["A1"].s.font.sz = 16;
+
+    if (worksheet["A1"]) worksheet["A1"].s = { font: { bold: true, sz: 16 } };
     
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Laporan Neraca");
@@ -313,6 +334,7 @@ export default function BalanceSheetPage() {
             <CardTitle>Neraca Keuangan</CardTitle>
             <CardDescription>
               Posisi per akhir {monthOptions.find(opt => opt.value === selectedMonth)?.label}
+              {" · "}Kas &amp; Bank dihitung sebagai pos penyeimbang (identitas Aset = Liabilitas + Ekuitas).
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -328,8 +350,7 @@ export default function BalanceSheetPage() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            <TableRow><TableCell>Kas</TableCell><TableCell className="text-right">{formatCurrency(reportData.assets.currentAssets.cash)}</TableCell></TableRow>
-                            <TableRow><TableCell>Bank</TableCell><TableCell className="text-right">{formatCurrency(reportData.assets.currentAssets.bank)}</TableCell></TableRow>
+                            <TableRow><TableCell>Kas &amp; Bank</TableCell><TableCell className="text-right">{formatCurrency(reportData.assets.currentAssets.cashBank)}</TableCell></TableRow>
                              <TableRow><TableCell>Piutang Usaha</TableCell><TableCell className="text-right">{formatCurrency(reportData.assets.currentAssets.receivables)}</TableCell></TableRow>
                              <TableRow><TableCell>Persediaan</TableCell><TableCell className="text-right">{formatCurrency(reportData.assets.currentAssets.inventory)}</TableCell></TableRow>
                             <TableRow className="font-bold bg-muted/50"><TableCell>Total Aset Lancar</TableCell><TableCell className="text-right">{formatCurrency(reportData.assets.currentAssets.total)}</TableCell></TableRow>
@@ -371,6 +392,12 @@ export default function BalanceSheetPage() {
             <div className="flex justify-between items-center w-full text-lg font-bold text-primary">
                 <div className="flex items-center gap-3"><Scale className="h-6 w-6"/><span>TOTAL PASIVA</span></div>
                 <span>{formatCurrency(reportData.liabilitiesAndEquity.total)}</span>
+            </div>
+            <div className="md:col-span-2 flex justify-between items-center w-full text-sm font-medium border-t border-primary/20 pt-3">
+                <span className="text-muted-foreground">Selisih (Total Aktiva − Total Pasiva)</span>
+                <span className={reportData.balanceDifference === 0 ? "font-bold text-green-600" : "font-bold text-red-600"}>
+                    {formatCurrency(reportData.balanceDifference)} · {reportData.balanceDifference === 0 ? "Seimbang" : "Tidak seimbang"}
+                </span>
             </div>
           </CardFooter>
         </Card>

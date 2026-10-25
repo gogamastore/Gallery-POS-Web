@@ -17,7 +17,7 @@ import {
   Store,
   User,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatSold } from "@/lib/utils";
 import {
   BLOCK_LABELS,
   CATEGORY_SLIDER_MAX,
@@ -248,6 +248,11 @@ function PInfo({
           <Star className="h-3 w-3" style={{ fill: "#fbbf24", color: "#fbbf24" }} />
           <span style={{ fontWeight: 600, color: "#1f2937" }}>{(p.ratingAvg ?? 0).toFixed(1)}</span>
           <span>({p.ratingCount})</span>
+        </div>
+      )}
+      {style.showSold && (p.soldCount ?? 0) > 0 && (
+        <div style={{ fontSize: small, color: "#6b7280", textAlign: centered ? "center" : "left" }}>
+          {formatSold(p.soldCount ?? 0)} terjual
         </div>
       )}
       {style.showStock && (

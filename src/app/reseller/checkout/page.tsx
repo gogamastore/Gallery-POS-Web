@@ -115,6 +115,7 @@ interface VoucherItem {
   startDate?: any;
   endDate?: any;
   dailyLimitPerUser?: number;
+  limitType?: "perDay" | "perEvent";
 }
 
 // Voucher masih dalam masa berlaku (tanggal)?
@@ -303,8 +304,10 @@ export default function CheckoutPage() {
   const [vouchers, setVouchers] = useState<VoucherItem[]>([]);
   const [selectedVoucher, setSelectedVoucher] = useState<VoucherItem | null>(null);
   const [voucherOpen, setVoucherOpen] = useState(false);
-  // Berapa kali user memakai tiap kode voucher dalam 24 jam terakhir.
+  // Pemakaian voucher per kode: `day` = 24 jam terakhir (batas per hari),
+  // `total` = seluruh riwayat non-batal (batas per event).
   const [voucherUsage, setVoucherUsage] = useState<Record<string, number>>({});
+  const [voucherUsageTotal, setVoucherUsageTotal] = useState<Record<string, number>>({});
 
   // ── Biaya Admin & Layanan ─────────────────────────────────────────
   const [adminFeeConfig, setAdminFeeConfig] = useState<{
@@ -419,6 +422,7 @@ export default function CheckoutPage() {
                 startDate: v.startDate,
                 endDate: v.endDate,
                 dailyLimitPerUser: Number(v.dailyLimitPerUser) || 0,
+                limitType: v.limitType === "perEvent" ? "perEvent" : "perDay",
               } as VoucherItem)
           );
         setVouchers(list);
@@ -428,7 +432,8 @@ export default function CheckoutPage() {
     })();
   }, []);
 
-  // Hitung pemakaian voucher user dalam 24 jam terakhir (untuk batas per hari).
+  // Hitung pemakaian voucher user: per 24 jam (batas per hari) & total
+  // (batas per event). Satu query, dua agregasi.
   useEffect(() => {
     if (!user?.uid) return;
     (async () => {
@@ -438,10 +443,13 @@ export default function CheckoutPage() {
           query(collection(db, "orders"), where("customerId", "==", user.uid))
         );
         const counts: Record<string, number> = {};
+        const totals: Record<string, number> = {};
         snap.forEach((d) => {
           const o = d.data() as any;
           if (!o.voucherCode) return;
           if (String(o.status || "").toLowerCase() === "cancelled") return;
+          // Total (per event): semua order non-batal yang memakai kode ini.
+          totals[o.voucherCode] = (totals[o.voucherCode] || 0) + 1;
           const created = o.createdAt?.toDate
             ? o.createdAt.toDate()
             : o.date?.toDate
@@ -451,6 +459,7 @@ export default function CheckoutPage() {
           counts[o.voucherCode] = (counts[o.voucherCode] || 0) + 1;
         });
         setVoucherUsage(counts);
+        setVoucherUsageTotal(totals);
       } catch {
         // diamkan
       }
@@ -460,14 +469,23 @@ export default function CheckoutPage() {
   // Voucher yang masih dalam masa berlaku (tanggal) untuk ditampilkan.
   const availableVouchers = vouchers.filter(isVoucherDateValid);
 
-  // Kelayakan voucher = min. belanja + batas pakai per user / 24 jam.
+  // Kelayakan voucher = min. belanja + batas pakai per user (per hari / per event).
   const voucherStatus = (v: VoucherItem): { ok: boolean; reason?: string } => {
     if (totalAmount < (v.minPurchase || 0)) {
       return { ok: false, reason: "Belanja belum memenuhi minimal" };
     }
     const limit = v.dailyLimitPerUser || 0;
-    if (limit > 0 && (voucherUsage[v.code] || 0) >= limit) {
-      return { ok: false, reason: `Batas ${limit}×/hari sudah tercapai` };
+    if (limit > 0) {
+      const perEvent = v.limitType === "perEvent";
+      const used = (perEvent ? voucherUsageTotal[v.code] : voucherUsage[v.code]) || 0;
+      if (used >= limit) {
+        return {
+          ok: false,
+          reason: perEvent
+            ? `Batas ${limit}× per event sudah tercapai`
+            : `Batas ${limit}×/hari sudah tercapai`,
+        };
+      }
     }
     return { ok: true };
   };
@@ -1282,7 +1300,7 @@ export default function CheckoutPage() {
                           <p className="text-xs text-muted-foreground">
                             Potongan {label}
                             {v.minPurchase ? ` · min. ${formatCurrency(v.minPurchase)}` : ""}
-                            {v.dailyLimitPerUser ? ` · ${v.dailyLimitPerUser}×/hari` : ""}
+                            {v.dailyLimitPerUser ? ` · ${v.dailyLimitPerUser}×/${v.limitType === "perEvent" ? "event" : "hari"}` : ""}
                           </p>
                           {!eligible && status.reason && (
                             <p className="text-xs text-destructive">{status.reason}</p>

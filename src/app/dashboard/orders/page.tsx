@@ -33,7 +33,7 @@ import {
   Download, FileText, Printer, Loader2, Edit, XCircle, Trash2, Minus, Plus,
   PlusCircle, Search, Calendar as CalendarIcon, DollarSign, MessageSquare,
   MoreHorizontal, Package, User, ExternalLink, FileBox, Truck,
-  MapPin, AlertCircle,
+  MapPin, AlertCircle, Undo2,
 } from "lucide-react";
 import {
   collection, doc, updateDoc, getDoc, query, orderBy, writeBatch, deleteDoc,
@@ -121,8 +121,16 @@ function PaymentBadge({ status }: { status: string }) {
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ status, biteshipStatus }: { status: string; biteshipStatus?: string }) {
   const s = (status ?? "").toLowerCase();
+  // Pengembalian (retur) dari kurir — badge terpisah dari "Dibatalkan".
+  if ((biteshipStatus ?? "").toLowerCase().includes("return")) {
+    return (
+      <span className="text-xs font-semibold px-2 py-0.5 rounded border bg-amber-100 text-amber-700 border-amber-300">
+        Dikembalikan
+      </span>
+    );
+  }
   const map: Record<string, { label: string; cls: string }> = {
     pending:    { label: "Menunggu",   cls: "bg-yellow-100 text-yellow-700 border-yellow-300" },
     processing: { label: "Diproses",  cls: "bg-blue-100 text-blue-700 border-blue-300" },
@@ -191,6 +199,7 @@ interface Order {
   destinationAreaId?: string;
   deliveryNotes?: string;
   labelPrinted?: boolean;
+  stockRestored?: boolean;
   // Midtrans
   midtransToken?: string;
   midtransRedirectUrl?: string;
@@ -260,6 +269,7 @@ function fromFirestore(id: string, data: Record<string, any>): Order {
     destinationAreaId: data.destinationAreaId,
     deliveryNotes: data.deliveryNotes,
     labelPrinted: data.labelPrinted === true,
+    stockRestored: data.stockRestored === true,
     midtransToken: data.midtransToken,
     midtransRedirectUrl: data.midtransRedirectUrl,
   };
@@ -1139,7 +1149,7 @@ export default function OrdersPage() {
     setIsProcessing(order.id);
     const batch = writeBatch(db);
     try {
-      batch.update(doc(db, "orders", order.id), { status: "Cancelled", paymentStatus: "cancelled" });
+      batch.update(doc(db, "orders", order.id), { status: "Cancelled", paymentStatus: "cancelled", stockRestored: true });
       for (const item of order.products ?? []) {
         const pdoc = await getDoc(doc(db, "products", item.productId));
         if (pdoc.exists())
@@ -1149,6 +1159,33 @@ export default function OrdersPage() {
       toast({ title: "Pesanan dibatalkan & stok dikembalikan" });
     } catch {
       toast({ title: "Gagal membatalkan", variant: "destructive" });
+    } finally {
+      setIsProcessing(null);
+    }
+  }, [toast]);
+
+  // Barang retur sudah diterima kembali → kembalikan stok (sekali saja).
+  const handleRestockReturn = useCallback(async (order: Order) => {
+    if (order.stockRestored) {
+      toast({ title: "Stok sudah dikembalikan sebelumnya." });
+      return;
+    }
+    setIsProcessing(order.id);
+    const batch = writeBatch(db);
+    try {
+      batch.update(doc(db, "orders", order.id), {
+        stockRestored: true,
+        returnReceivedAt: serverTimestamp(),
+      });
+      for (const item of order.products ?? []) {
+        const pdoc = await getDoc(doc(db, "products", item.productId));
+        if (pdoc.exists())
+          batch.update(doc(db, "products", item.productId), { stock: (pdoc.data().stock ?? 0) + item.quantity });
+      }
+      await batch.commit();
+      toast({ title: "Barang retur diterima — stok dikembalikan." });
+    } catch {
+      toast({ title: "Gagal mengembalikan stok", variant: "destructive" });
     } finally {
       setIsProcessing(null);
     }
@@ -1217,15 +1254,34 @@ export default function OrdersPage() {
       ["delivered", "Delivered", "Selesai", "selesai"].includes(statusLower(o.status))
     );
 
-    // "Dibatalkan" — "Dibatalkan" untuk data lama sebelum normalisasi status
+    // "Pengembalian" — pesanan yang dikembalikan kurir (status Biteship
+    // mengandung "return", mis. 'returned'). Dipisah dari "Dibatalkan".
+    const isReturned = (o: Order) =>
+      (o.biteshipStatus ?? "").toLowerCase().includes("return");
+    const returned = base.filter(isReturned);
+
+    // "Dibatalkan" — "Dibatalkan" untuk data lama sebelum normalisasi status.
+    // Pesanan retur DIKELUARKAN agar hanya muncul di tab "Pengembalian".
     const cancelled = base.filter(
       (o) =>
-        ["cancelled", "failed"].includes(o.paymentStatus.toLowerCase()) ||
-        ["cancelled", "Cancelled", "Dibatalkan", "dibatalkan"].includes(o.status)
+        !isReturned(o) &&
+        (["cancelled", "failed"].includes(o.paymentStatus.toLowerCase()) ||
+          ["cancelled", "Cancelled", "Dibatalkan", "dibatalkan"].includes(o.status))
     );
 
-    return { toProcess, toShip, shipped, delivered, cancelled };
+    return { toProcess, toShip, shipped, delivered, cancelled, returned };
   }, [allOrders, dateRange, searchTerm]);
+
+  // Ringkasan tab "Perlu Dikirim": pendapatan (tanpa ongkir) + total ongkir.
+  // Dihitung dari SEMUA pesanan di tab ini tanpa melihat status bayar:
+  // pengiriman Biteship sudah pasti dibayar di muka, sedangkan "Ambil di
+  // Tempat" tetap dihitung meski COD (kas ditagih saat barang diambil).
+  const toShipSummary = useMemo(() => {
+    const list = filteredOrders.toShip;
+    const shipping = list.reduce((s, o) => s + (o.shippingFee || 0), 0);
+    const revenue = list.reduce((s, o) => s + Math.max(0, (o.total || 0) - (o.shippingFee || 0)), 0);
+    return { revenue, shipping, count: list.length };
+  }, [filteredOrders.toShip]);
 
   // ── Select helpers ────────────────────────────────────────────────
 
@@ -1503,7 +1559,7 @@ export default function OrdersPage() {
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <PaymentBadge status={order.paymentStatus} />
-                      <StatusBadge status={order.status} />
+                      <StatusBadge status={order.status} biteshipStatus={order.biteshipStatus} />
                       {(order.biteshipCourierName || order.shippingMethod) && (
                         <span className="text-xs text-muted-foreground flex items-center gap-1">
                           <Truck className="h-3 w-3" />
@@ -1557,7 +1613,11 @@ export default function OrdersPage() {
                             <FileBox className="mr-2 h-4 w-4" />Dokumen Pesanan
                           </DropdownMenuItem>
                           <EditOrderDialog order={order} onOrderUpdated={() => {}} />
-                          {!["cancelled", "Cancelled"].includes(order.status) && (
+                          {/* Batalkan hanya untuk pesanan yang belum dikirim/selesai/batal
+                              (tidak bisa membatalkan yang sudah 'dikirim' atau 'selesai'). */}
+                          {!["cancelled", "dibatalkan", "shipped", "dikirim", "delivered", "selesai"].includes(
+                            order.status.toLowerCase()
+                          ) && (
                             <AlertDialog>
                               <AlertDialogTrigger asChild>
                                 <button className="relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-destructive focus:bg-accent w-full">
@@ -1573,6 +1633,31 @@ export default function OrdersPage() {
                                   <AlertDialogCancel>Batal</AlertDialogCancel>
                                   <AlertDialogAction onClick={() => handleCancelOrder(order)} className="bg-destructive hover:bg-destructive/90">
                                     Ya, Batalkan
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          )}
+                          {/* Retur: kembalikan stok saat barang retur sudah diterima. */}
+                          {(order.biteshipStatus ?? "").toLowerCase().includes("return") && !order.stockRestored && (
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <button className="relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-amber-700 focus:bg-accent w-full">
+                                  <Undo2 className="mr-2 h-4 w-4" />Barang Retur Diterima
+                                </button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Barang retur sudah diterima?</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    Lakukan hanya jika paket retur sudah sampai kembali di toko. Stok akan
+                                    dikembalikan (sekali saja).
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Belum</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => handleRestockReturn(order)} className="bg-amber-600 hover:bg-amber-700">
+                                    Ya, Kembalikan Stok
                                   </AlertDialogAction>
                                 </AlertDialogFooter>
                               </AlertDialogContent>
@@ -1609,6 +1694,13 @@ export default function OrdersPage() {
   function renderToShipManager(source: Order[], tabName: string) {
     const managed = applyShipFilters(source);
     const couriers = shipMode === "instant" ? INSTANT_COURIERS : REGULER_COURIERS;
+
+    // Jumlah pesanan per jenis pengiriman (dari list tab ini) untuk badge.
+    const countReguler = source.filter(
+      (o) => !!o.biteshipCourierCode && !isInstantCourier(o.biteshipCourierCode)
+    ).length;
+    const countInstant = source.filter((o) => isInstantCourier(o.biteshipCourierCode)).length;
+    const countPickup = source.filter((o) => !o.biteshipCourierCode).length;
     const selectedInManaged = managed.filter((o) => selectedOrders.includes(o.id));
     const printMissingResi = selectedInManaged.some(
       (o) => !!o.biteshipCourierCode && !isInstantCourier(o.biteshipCourierCode) && !o.waybillId
@@ -1650,6 +1742,7 @@ export default function OrdersPage() {
                 onClick={() => { setShipMode("reguler"); setShipCourier("all"); }}
               >
                 Reguler
+                {countReguler > 0 && <Badge variant="secondary" className="ml-1.5">{countReguler}</Badge>}
               </Button>
               <Button
                 size="sm"
@@ -1657,6 +1750,7 @@ export default function OrdersPage() {
                 onClick={() => { setShipMode("instant"); setShipCourier("all"); }}
               >
                 Instan
+                {countInstant > 0 && <Badge variant="secondary" className="ml-1.5">{countInstant}</Badge>}
               </Button>
               <Button
                 size="sm"
@@ -1664,6 +1758,7 @@ export default function OrdersPage() {
                 onClick={() => { setShipMode("pickup"); setShipCourier("all"); }}
               >
                 Ambil di Tempat
+                {countPickup > 0 && <Badge variant="secondary" className="ml-1.5">{countPickup}</Badge>}
               </Button>
             </div>
           </div>
@@ -1807,8 +1902,28 @@ export default function OrdersPage() {
       </CardHeader>
 
       <CardContent>
+        {/* Ringkasan "Perlu Dikirim": pendapatan (tanpa ongkir) + total ongkir
+            dari SEMUA pesanan di tab ini (Biteship + Ambil di Tempat),
+            tanpa melihat status bayar. */}
+        <div className="mb-6 grid gap-3 sm:grid-cols-2">
+          <div className="flex items-center justify-between rounded-lg border bg-muted/30 p-4">
+            <div className="flex items-center gap-3 text-sm font-medium text-muted-foreground">
+              <DollarSign className="h-5 w-5 text-primary" />
+              <span>Pendapatan Perlu Dikirim<br /><span className="text-xs">(semua pesanan, tanpa ongkir)</span></span>
+            </div>
+            <div className="text-xl font-bold text-primary">{formatCurrency(toShipSummary.revenue)}</div>
+          </div>
+          <div className="flex items-center justify-between rounded-lg border bg-muted/30 p-4">
+            <div className="flex items-center gap-3 text-sm font-medium text-muted-foreground">
+              <Truck className="h-5 w-5 text-cyan-600" />
+              <span>Total Ongkir Pembeli<br /><span className="text-xs">(semua pesanan perlu dikirim)</span></span>
+            </div>
+            <div className="text-xl font-bold text-cyan-700">{formatCurrency(toShipSummary.shipping)}</div>
+          </div>
+        </div>
+
         <Tabs defaultValue="toShip">
-          <TabsList className="h-auto p-1.5 w-full grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-1.5">
+          <TabsList className="h-auto p-1.5 w-full grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-1.5">
             <TabsTrigger value="toProcess">
               Belum Bayar <Badge className="ml-1.5">{filteredOrders.toProcess.length}</Badge>
             </TabsTrigger>
@@ -1823,6 +1938,15 @@ export default function OrdersPage() {
             </TabsTrigger>
             <TabsTrigger value="cancelled">
               Dibatalkan <Badge className="ml-1.5">{filteredOrders.cancelled.length}</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="returned">
+              Pengembalian
+              {filteredOrders.returned.length > 0 && (
+                <Badge className="ml-1.5 bg-amber-500 hover:bg-amber-500">{filteredOrders.returned.length}</Badge>
+              )}
+              {filteredOrders.returned.length === 0 && (
+                <Badge className="ml-1.5">0</Badge>
+              )}
             </TabsTrigger>
           </TabsList>
 
@@ -1840,6 +1964,9 @@ export default function OrdersPage() {
           </TabsContent>
           <TabsContent value="cancelled" className="mt-4">
             {renderOrderList(filteredOrders.cancelled, "cancelled")}
+          </TabsContent>
+          <TabsContent value="returned" className="mt-4">
+            {renderOrderList(filteredOrders.returned, "returned")}
           </TabsContent>
         </Tabs>
       </CardContent>

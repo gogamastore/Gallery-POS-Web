@@ -74,6 +74,7 @@ interface Product {
   name: string;
   sku: string;
   category: string;
+  brandId?: string;
   price: number;
   purchasePrice?: number;
   stock: number;
@@ -227,6 +228,8 @@ export default function ProductDetailPage() {
   const productId = params.id as string;
 
   const [product, setProduct] = useState<Product | null>(null);
+  // Nama brand (diambil dari koleksi `brands` via brandId). null = belum ada.
+  const [brandName, setBrandName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -272,6 +275,18 @@ export default function ProductDetailPage() {
           isPromo,
           promoPrice,
         } as Product);
+
+        // Ambil nama brand (jika produk punya brandId).
+        if (typeof data.brandId === "string" && data.brandId) {
+          try {
+            const bSnap = await getDoc(doc(db, "brands", data.brandId));
+            setBrandName(bSnap.exists() ? ((bSnap.data().name as string) || null) : null);
+          } catch {
+            setBrandName(null);
+          }
+        } else {
+          setBrandName(null);
+        }
       } catch (error) {
         console.error("Error fetching product:", error);
         toast({ variant: "destructive", title: "Gagal memuat produk." });
@@ -422,6 +437,13 @@ export default function ProductDetailPage() {
               </InfoRow>
               <InfoRow icon={Package} label="Kategori">
                 {product.category || "-"}
+              </InfoRow>
+              <InfoRow icon={Tag} label="Brand">
+                {product.brandId && brandName ? (
+                  brandName
+                ) : (
+                  <span className="font-medium text-amber-600">Belum ada brand</span>
+                )}
               </InfoRow>
             </CardContent>
           </Card>

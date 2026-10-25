@@ -3,11 +3,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
-import { db, functions } from "@/lib/firebase";
+import { db } from "@/lib/firebase";
 import { doc, onSnapshot, updateDoc, serverTimestamp } from "firebase/firestore";
-import { httpsCallable } from "firebase/functions";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -30,9 +28,7 @@ import {
   ArrowLeft,
   Loader2,
   CreditCard,
-  MapPin,
   CheckCircle2,
-  ExternalLink,
   Clock,
   Truck,
   PackageCheck,
@@ -42,6 +38,7 @@ import {
   Headset,
   MessageSquare,
   Phone,
+  Undo2,
 } from "lucide-react";
 import Image from "next/image";
 import { format } from "date-fns";
@@ -54,23 +51,7 @@ import {
   orderWhatsappMessage,
 } from "@/lib/contact-admin";
 import type { Order } from "../page";
-
-// ── Firebase Function: tracking ────────────────────────────────────
-
-const trackBiteshipOrderFn = httpsCallable<
-  { orderId: string },
-  {
-    hasDelivery: boolean;
-    biteshipOrderId?: string;
-    waybillId?: string;
-    status?: string;
-    courierName?: string;
-    driverName?: string;
-    driverPhone?: string;
-    trackingUrl?: string;
-    history?: Array<{ timestamp: string; status: string; note: string }>;
-  }
->(functions, "trackBiteshipOrder");
+import ShippingTracking from "@/components/orders/shipping-tracking";
 
 // ── Helpers ────────────────────────────────────────────────────────
 
@@ -129,8 +110,10 @@ function fromFirestore(docId: string, data: Record<string, any>): Order {
 
 // ── Status info ────────────────────────────────────────────────────
 
-function getStatusInfo(status: string) {
+function getStatusInfo(status: string, biteshipStatus?: string) {
   const s = status.toLowerCase();
+  if ((biteshipStatus ?? "").toLowerCase().includes("return"))
+                          return { title: "Pesanan Dikembalikan", icon: Undo2,        color: "text-amber-700",   bg: "bg-amber-50 border-amber-200" };
   if (s === "pending")    return { title: "Menunggu Diproses",   icon: Clock,        color: "text-orange-600",  bg: "bg-orange-50 border-orange-200" };
   if (s === "processing") return { title: "Sedang Diproses",     icon: RefreshCw,    color: "text-blue-600",    bg: "bg-blue-50 border-blue-200" };
   if (s === "shipped" || s === "dikirim")
@@ -140,50 +123,6 @@ function getStatusInfo(status: string) {
   if (s === "cancelled" || s === "dibatalkan")
                           return { title: "Pesanan Dibatalkan",  icon: XCircle,      color: "text-red-600",     bg: "bg-red-50 border-red-200" };
   return { title: `Status: ${status}`, icon: AlertCircle, color: "text-gray-600", bg: "bg-gray-50 border-gray-200" };
-}
-
-const has = (s: string, keys: string[]) => keys.some((k) => s.includes(k));
-const ON_THE_WAY = ["dropping_off", "in_transit", "on_process", "out_for_delivery", "on_the_way", "delivering"];
-const FAILED = ["cancelled", "canceled", "rejected", "failed", "not_found"];
-
-// Judul status Biteship dalam Bahasa Indonesia (mengikuti halaman tracking Biteship).
-function biteshipStatusLabel(status?: string): string {
-  const s = (status ?? "").toLowerCase();
-  if (!s) return "Memproses…";
-  if (s.includes("confirmed")) return "Permintaan Pengiriman Telah Diterima";
-  if (has(s, ["allocating", "waiting"])) return "Mencari Kurir";
-  if (s.includes("allocated")) return "Permintaan Pengiriman Telah Diterima";
-  if (s.includes("picking_up") || s === "pickup") return "Pesanan Sedang Proses Penjemputan";
-  if (s.includes("picked")) return "Pesanan Telah Dijemput";
-  if (has(s, ON_THE_WAY)) return "Pesanan Sedang Dalam Perjalanan";
-  if (s.includes("delivered")) return "Pesanan Telah Sampai Tujuan";
-  if (s.includes("hold")) return "Pengiriman Tertunda";
-  if (s.includes("return")) return "Paket Dikembalikan";
-  if (has(s, FAILED)) return "Pengiriman Gagal / Dibatalkan";
-  return status ?? "";
-}
-
-// Keterangan status dalam Bahasa Indonesia (dipakai bila Biteship tak mengirim catatan).
-function biteshipStatusDesc(status?: string): string {
-  const s = (status ?? "").toLowerCase();
-  if (s.includes("confirmed")) return "Pesanan kurir dikonfirmasi. Kurir telah diberi tahu untuk menjemput.";
-  if (has(s, ["allocating", "waiting"])) return "Sedang mencari kurir terdekat.";
-  if (s.includes("allocated")) return "Kurir telah dialokasikan. Menunggu dijemput.";
-  if (s.includes("picking_up") || s === "pickup") return "Kurir sedang menuju lokasi penjemputan.";
-  if (s.includes("picked")) return "Paket telah dijemput kurir.";
-  if (has(s, ON_THE_WAY)) return "Paket sedang menuju alamat tujuan.";
-  if (s.includes("delivered")) return "Paket telah sampai di tujuan.";
-  if (s.includes("hold")) return "Pengiriman tertunda sementara.";
-  if (s.includes("return")) return "Paket dikembalikan ke pengirim.";
-  if (has(s, FAILED)) return "Pengiriman dibatalkan atau gagal.";
-  return "";
-}
-
-// Format waktu Biteship (ISO) → "d MMM HH:mm" lokal; fallback ke string asli.
-function formatTrackTime(ts: string): string {
-  const d = new Date(ts);
-  if (isNaN(d.getTime())) return ts;
-  return d.toLocaleString("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
 function paymentLabel(ps: string): string {
@@ -239,19 +178,6 @@ function InfoRow({ label, value, valueClass }: { label: string; value: string; v
   );
 }
 
-// ── Tracking history ───────────────────────────────────────────────
-
-interface TrackingResult {
-  hasDelivery: boolean;
-  status?: string;
-  courierName?: string;
-  driverName?: string;
-  driverPhone?: string;
-  trackingUrl?: string;
-  waybillId?: string;
-  history?: Array<{ timestamp: string; status: string; note: string }>;
-}
-
 // ── Main Page ──────────────────────────────────────────────────────
 
 export default function OrderDetailPage() {
@@ -266,9 +192,6 @@ export default function OrderDetailPage() {
   const prevPaymentStatus = useRef<string | null>(null);
 
   // Tracking state
-  const [trackingResult, setTrackingResult] = useState<TrackingResult | null>(null);
-  const [isTracking, setIsTracking] = useState(false);
-  const [trackingError, setTrackingError] = useState<string | null>(null);
 
   // Confirm delivered state
   const [isConfirming, setIsConfirming] = useState(false);
@@ -327,27 +250,6 @@ export default function OrderDetailPage() {
     } else {
       toast({ title: "Snap belum siap, coba muat ulang.", variant: "destructive" });
     }
-  }
-
-  // ── Track ──────────────────────────────────────────────────────
-
-  const handleTrack = useCallback(async () => {
-    if (!order) return;
-    setIsTracking(true);
-    setTrackingError(null);
-    try {
-      const res = await trackBiteshipOrderFn({ orderId: order.id });
-      setTrackingResult(res.data);
-    } catch (err: any) {
-      setTrackingError(err?.message ?? "Gagal mengambil data tracking.");
-    } finally {
-      setIsTracking(false);
-    }
-  }, [order]);
-
-  function openTrackingUrl() {
-    const url = order?.deliveryTrackingUrl ?? trackingResult?.trackingUrl;
-    if (url) window.open(url, "_blank");
   }
 
   // ── Confirm delivered ──────────────────────────────────────────
@@ -450,7 +352,7 @@ export default function OrderDetailPage() {
     );
   }
 
-  const statusInfo = getStatusInfo(order.status);
+  const statusInfo = getStatusInfo(order.status, order.biteshipStatus);
   const StatusIcon = statusInfo.icon;
   const isPendingPayment = order.paymentStatus === "pending_payment";
   const hasBiteship = !!(order.biteshipOrderId);
@@ -493,25 +395,6 @@ export default function OrderDetailPage() {
             <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
             <span>Selesaikan pembayaran sebelum batas waktu Midtrans (24 jam sejak pesanan dibuat).</span>
           </div>
-        </div>
-      )}
-
-      {/* 2. Lacak — jika Biteship */}
-      {hasBiteship && (
-        <div className="flex gap-2">
-          <Button variant="outline" className="flex-1" onClick={handleTrack} disabled={isTracking}>
-            {isTracking ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <MapPin className="mr-2 h-4 w-4" />
-            )}
-            {isTracking ? "Memuat..." : "Lacak Pengiriman"}
-          </Button>
-          {(order.deliveryTrackingUrl || trackingResult?.trackingUrl) && (
-            <Button variant="outline" onClick={openTrackingUrl}>
-              <ExternalLink className="h-4 w-4" />
-            </Button>
-          )}
         </div>
       )}
 
@@ -560,67 +443,9 @@ export default function OrderDetailPage() {
         )}
       </Section>
 
-      {/* ── Riwayat Tracking ── */}
+      {/* ── Lacak Pengiriman (riwayat otomatis + foto bukti) ── */}
       {hasBiteship && (
-        <div>
-          {trackingError && (
-            <div className="flex items-center gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
-              <AlertCircle className="h-4 w-4 shrink-0" />
-              {trackingError}
-            </div>
-          )}
-
-          {trackingResult?.hasDelivery && (
-            <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
-              <div className="px-4 py-3 border-b bg-muted/30 flex items-center justify-between">
-                <p className="font-semibold text-sm">Riwayat Tracking</p>
-                {trackingResult.status && (
-                  <Badge variant="secondary" className="text-xs">
-                    {biteshipStatusLabel(trackingResult.status)}
-                  </Badge>
-                )}
-              </div>
-              <div className="px-4 py-4 space-y-2">
-                {trackingResult.courierName && (
-                  <p className="text-xs text-muted-foreground">Kurir: {trackingResult.courierName}</p>
-                )}
-                {trackingResult.driverName && (
-                  <p className="text-xs text-muted-foreground">
-                    Driver: {trackingResult.driverName}
-                    {trackingResult.driverPhone ? ` (${trackingResult.driverPhone})` : ""}
-                  </p>
-                )}
-
-                {trackingResult.history && trackingResult.history.length > 0 && (
-                  <>
-                    <Separator className="my-2" />
-                    <div className="space-y-3">
-                      {trackingResult.history.slice(0, 6).map((h, i) => (
-                        <div key={i} className="flex gap-3">
-                          <div className="flex flex-col items-center">
-                            <div className={`w-2 h-2 rounded-full mt-1 shrink-0 ${i === 0 ? "bg-blue-500" : "bg-gray-300"}`} />
-                            {i < Math.min(trackingResult.history!.length, 6) - 1 && (
-                              <div className="w-px flex-1 bg-gray-200 mt-1" />
-                            )}
-                          </div>
-                          <div className="pb-2">
-                            <p className="text-sm font-medium">{biteshipStatusLabel(h.status)}</p>
-                            <p className="text-xs text-muted-foreground">{h.note || biteshipStatusDesc(h.status)}</p>
-                            <p className="text-xs text-muted-foreground">{formatTrackTime(h.timestamp)}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                )}
-
-                {trackingResult.history?.length === 0 && (
-                  <p className="text-xs text-muted-foreground">Belum ada riwayat pergerakan paket.</p>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
+        <ShippingTracking orderId={order.id} deliveryTrackingUrl={order.deliveryTrackingUrl} />
       )}
 
       {/* ── Alamat Pengiriman ── */}

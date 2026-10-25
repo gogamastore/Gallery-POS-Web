@@ -27,6 +27,7 @@ export interface PreviewProduct {
   stock: number;
   ratingAvg?: number;
   ratingCount?: number;
+  soldCount?: number;
 }
 
 export interface PreviewBanner {
@@ -68,6 +69,7 @@ const toProduct = (id: string, d: DocumentData): PreviewProduct => ({
   stock: Number(d.stock ?? 0) || 0,
   ratingAvg: Number(d.ratingAvg ?? 0) || 0,
   ratingCount: Number(d.ratingCount ?? 0) || 0,
+  soldCount: Number(d.soldCount ?? 0) || 0,
 });
 
 const toMillis = (v: unknown): number => {
@@ -119,8 +121,9 @@ function fetchSource(cfg: ProductBlockConfig): Promise<PreviewProduct[]> {
     const products = collection(db, "products");
     switch (cfg.source) {
       case "trending": {
-        const snap = await getDocs(collection(db, "trending_products"));
-        return fetchByIds(snap.docs.map((d) => d.data().productId as string));
+        // Otomatis: produk paling banyak terjual (soldCount) lebih dulu.
+        const snap = await getDocs(query(products, orderBy("soldCount", "desc"), fsLimit(fetchLimit)));
+        return snap.docs.map((d) => toProduct(d.id, d.data())).filter((p) => (p.soldCount ?? 0) > 0);
       }
       case "promo": {
         promoCache ??= fetchActivePromos();

@@ -30,6 +30,7 @@ interface Product {
   discountPrice?: string;
   ratingAvg?: number;
   ratingCount?: number;
+  soldCount?: number;
   purchaseAt?: Timestamp; // waktu terakhir produk dibeli/restock (untuk urutan)
 }
 
@@ -49,7 +50,7 @@ const formatCurrency = (value: string | number): string => {
     }).format(num);
 }
 
-export default function ProductGrid({ searchTerm, category, viewMode = "grid", categories, forceGrid = false }: { searchTerm: string, category: string, viewMode?: "grid" | "list", categories?: string[], forceGrid?: boolean }) {
+export default function ProductGrid({ searchTerm, category, viewMode = "grid", categories, forceGrid = false, trending = false }: { searchTerm: string, category: string, viewMode?: "grid" | "list", categories?: string[], forceGrid?: boolean, trending?: boolean }) {
     const [allProducts, setAllProducts] = useState<Product[]>([]);
     const [loading, setLoading] = useState(true);
     const { toast } = useToast();
@@ -132,11 +133,18 @@ export default function ProductGrid({ searchTerm, category, viewMode = "grid", c
         //     lalu urut abjad.
         const stockRank = (p: Product) => (p.stock > 0 ? 0 : 1);
         const purchaseMs = (p: Product) => (p.purchaseAt ? p.purchaseAt.toMillis() : 0);
+        const soldOf = (p: Product) => p.soldCount ?? 0;
 
         // Salin dulu agar tidak mengubah array asli (allProducts) secara langsung.
         const sorted = [...filtered].sort((a, b) => {
             const byStock = stockRank(a) - stockRank(b);
             if (byStock !== 0) return byStock;
+
+            // Halaman Produk Trending: produk terlaris (soldCount) tampil dulu.
+            if (trending) {
+                const bySold = soldOf(b) - soldOf(a);
+                if (bySold !== 0) return bySold;
+            }
 
             const byPurchase = purchaseMs(b) - purchaseMs(a);
             if (byPurchase !== 0) return byPurchase;
@@ -145,7 +153,7 @@ export default function ProductGrid({ searchTerm, category, viewMode = "grid", c
         });
 
         return sorted;
-    }, [allProducts, category, searchTerm, catSet]);
+    }, [allProducts, category, searchTerm, catSet, trending]);
 
     // ── Render bertahap saat scroll (virtualisasi sederhana) ──────────
     // Data penuh tetap di memori (filteredProducts), jadi PENCARIAN tetap

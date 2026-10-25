@@ -1,31 +1,24 @@
 
 "use client"
 
-import { useState } from "react";
-import ProductFilters from "../components/product-filters";
 import ProductGrid from "@/components/home/product-grid";
-import CatalogParentBar from "@/components/reseller/catalog-parent-bar";
-import { useResellerFilters } from "@/components/providers/reseller-filter-provider";
+import { TrendingUp } from "lucide-react";
 
-export default function CatalogPage() {
-    // Kata kunci pencarian kini dimiliki bersama dengan kotak pencarian di
-    // app bar (lihat reseller-header), jadi diambil dari context.
-    const { searchTerm, setSearchTerm, category, setCategory } = useResellerFilters();
-    const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
-
+// Halaman Produk Trending: daftar produk terlaris (urut berdasarkan soldCount).
+// Katalog penuh kini ada di /reseller/catalog.
+export default function TrendingPage() {
     return (
-        <div className="flex flex-col gap-2 animate-in fade-in-0 duration-500">
-            <CatalogParentBar />
-            <ProductFilters
-                onSearchChange={setSearchTerm}
-                onCategoryChange={setCategory}
-                initialSearchTerm={searchTerm}
-                initialCategory={category}
-                viewMode={viewMode}
-                onViewChange={setViewMode}
-                showSearch={false}
-            />
-            <ProductGrid searchTerm={searchTerm} category={category} viewMode={viewMode} />
+        <div className="flex flex-col animate-in fade-in-0 duration-500">
+            <div className="mx-auto w-full max-w-screen-2xl px-3 sm:px-4 pt-6">
+                <div className="flex items-center gap-3">
+                    <TrendingUp className="h-7 w-7 text-primary" />
+                    <h1 className="text-xl font-bold md:text-2xl">Produk Trending</h1>
+                    <p className="hidden text-sm text-muted-foreground sm:block">
+                        Produk terlaris berdasarkan jumlah terjual.
+                    </p>
+                </div>
+            </div>
+            <ProductGrid searchTerm="" category="Semua" trending />
         </div>
     );
 }

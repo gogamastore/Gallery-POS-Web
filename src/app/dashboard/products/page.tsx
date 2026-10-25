@@ -52,6 +52,7 @@ interface Product {
   name: string;
   sku: string;
   category: string;
+  brandId?: string;
   price: number; // Normalized to number
   purchasePrice?: number;
   stock: number;
@@ -259,6 +260,8 @@ function BulkImportDialog({ onImportSuccess }: { onImportSuccess: () => void }) 
 export default function ProductsPage() {
   const router = useRouter();
   const [products, setProducts] = useState<Product[]>([]);
+  // Peta brandId → nama brand untuk menampilkan kolom "Brand" di daftar produk.
+  const [brandMap, setBrandMap] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
@@ -281,6 +284,12 @@ export default function ProductsPage() {
                 price: parseCurrency(data.price), // Normalize price here
             } as Product;
         });
+
+        // Peta brandId → nama brand (untuk kolom "Brand").
+        const brandsSnap = await getDocs(collection(db, "brands"));
+        const bMap = new Map<string, string>();
+        brandsSnap.forEach((d) => bMap.set(d.id, (d.data().name as string) || ""));
+        setBrandMap(bMap);
 
         // Promo aktif (samakan dengan halaman reseller/Flutter): dokumen
         // `promotions` dengan startDate <= now < endDate. Produk terkait diberi
@@ -503,6 +512,8 @@ export default function ProductsPage() {
                             <span className="sr-only">Image</span>
                         </TableHead>
                         <TableHead>Nama</TableHead>
+                        <TableHead className="hidden lg:table-cell">Kategori</TableHead>
+                        <TableHead className="hidden lg:table-cell">Brand</TableHead>
                         <TableHead className="hidden md:table-cell">Stok</TableHead>
                         <TableHead className="text-right hidden sm:table-cell">Harga Beli</TableHead>
                         <TableHead className="text-right">Harga Jual</TableHead>
@@ -512,7 +523,7 @@ export default function ProductsPage() {
                     <TableBody>
                         {loading ? (
                             <TableRow>
-                                <TableCell colSpan={7} className="h-24 text-center">Memuat produk...</TableCell>
+                                <TableCell colSpan={9} className="h-24 text-center">Memuat produk...</TableCell>
                             </TableRow>
                         ) : paginatedProducts.length > 0 ? (
                             paginatedProducts.map((product) => (
@@ -545,6 +556,20 @@ export default function ProductsPage() {
                                             {product.name}
                                         </Link>
                                     </TableCell>
+                                    <TableCell className="hidden lg:table-cell">
+                                        {product.category ? (
+                                            <Badge variant="secondary">{product.category}</Badge>
+                                        ) : (
+                                            <span className="text-xs text-muted-foreground">—</span>
+                                        )}
+                                    </TableCell>
+                                    <TableCell className="hidden lg:table-cell">
+                                        {product.brandId && brandMap.get(product.brandId) ? (
+                                            <Badge variant="outline">{brandMap.get(product.brandId)}</Badge>
+                                        ) : (
+                                            <Badge className="bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-100">Belum ada</Badge>
+                                        )}
+                                    </TableCell>
                                     <TableCell className="hidden md:table-cell">
                                         <Badge className={cn({
                                             'bg-destructive text-destructive-foreground hover:bg-destructive/80': product.stock === 0,
@@ -576,7 +601,7 @@ export default function ProductsPage() {
                             ))
                         ) : (
                             <TableRow>
-                                <TableCell colSpan={7} className="h-24 text-center">
+                                <TableCell colSpan={9} className="h-24 text-center">
                                     Tidak ada produk yang cocok dengan pencarian Anda.
                                 </TableCell>
                             </TableRow>

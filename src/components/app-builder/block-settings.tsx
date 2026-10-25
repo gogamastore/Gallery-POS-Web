@@ -423,6 +423,12 @@ function CardSettings({
           onChange={(showRating) => setCard({ showRating })}
         />
         <SwitchField
+          label="Tampilkan Terjual"
+          hint="Jumlah unit produk yang sudah terjual"
+          checked={card.showSold}
+          onChange={(showSold) => setCard({ showSold })}
+        />
+        <SwitchField
           label="Badge Diskon (-%)"
           checked={card.showDiscountBadge}
           onChange={(showDiscountBadge) => setCard({ showDiscountBadge })}

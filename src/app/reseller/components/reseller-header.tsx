@@ -54,7 +54,7 @@ export default function ResellerHeader({ onToggleSidebar }: { onToggleSidebar?: 
 
     // Kotak pencarian hanya tampil di Katalog Produk, dan karena berada di
     // dalam header yang sticky, ia tidak ikut ter-scroll bersama daftar produk.
-    const showSearch = pathname === "/reseller/trending";
+    const showSearch = pathname === "/reseller/catalog" || pathname === "/reseller/products";
 
     useEffect(() => {
         setIsMounted(true);

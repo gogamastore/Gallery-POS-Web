@@ -6,6 +6,7 @@ import { doc, getDoc, collection, query, where, getDocs, Timestamp } from "fireb
 import { db } from "@/lib/firebase";
 import { useRouter, useParams } from "next/navigation";
 import Image from "next/image";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +18,7 @@ import { useCart } from "@/hooks/use-cart";
 import { useAuth } from "@/hooks/use-auth";
 import { sendChatMessage } from "@/lib/chat";
 import { productChatMessage } from "@/lib/contact-admin";
+import { formatSold } from "@/lib/utils";
 import ProductReviews from "@/components/reseller/product-reviews";
 import {
   Loader2,
@@ -32,6 +34,7 @@ import {
   Star,
   RotateCcw,
   MessageCircleMore,
+  Building,
 } from "lucide-react";
 
 interface Product {
@@ -43,12 +46,14 @@ interface Product {
   stock: number;
   description?: string;
   category?: string;
+  brandId?: string;
   sku: string;
   weightGram?: number;
   isPromo?: boolean;
   discountPrice?: string;
   ratingAvg?: number;
   ratingCount?: number;
+  soldCount?: number;
 }
 
 interface Promotion {
@@ -70,6 +75,7 @@ const formatCurrency = (value: string | number): string => {
 
 export default function ProductDetailPage() {
   const [product, setProduct] = useState<Product | null>(null);
+  const [brand, setBrand] = useState<{ id: string; name: string; logoUrl: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [quantity, setQuantity] = useState(1);
   const [isAddingToCart, setIsAddingToCart] = useState(false);
@@ -110,6 +116,25 @@ export default function ProductDetailPage() {
                 productData.isPromo = true;
                 productData.discountPrice = formatCurrency(promoData.discountPrice);
            }
+      }
+
+      // Brand (kartu brand yang bisa diketuk). Sembunyi bila brandId kosong /
+      // brand tak ada. Hanya membaca koleksi `brands` (tidak mengubah produk).
+      try {
+        if (productData.brandId) {
+          const bSnap = await getDoc(doc(db, "brands", productData.brandId));
+          if (bSnap.exists()) {
+            const bd = bSnap.data() as any;
+            setBrand({ id: bSnap.id, name: (bd.name as string) || "", logoUrl: (bd.logoUrl as string) || "" });
+          } else {
+            setBrand(null);
+          }
+        } else {
+          setBrand(null);
+        }
+      } catch (e) {
+        console.error("Gagal memuat brand:", e);
+        setBrand(null);
       }
 
       setProduct(productData);
@@ -252,6 +277,12 @@ export default function ProductDetailPage() {
                                     ? `${(product.ratingAvg ?? 0).toFixed(1)} (${product.ratingCount} ulasan)`
                                     : "Belum ada ulasan"}
                             </span>
+                            {(product.soldCount ?? 0) > 0 && (
+                                <>
+                                    <span>·</span>
+                                    <span>{formatSold(product.soldCount ?? 0)} terjual</span>
+                                </>
+                            )}
                             {product.sku && (
                                 <>
                                     <span>·</span>
@@ -311,6 +342,33 @@ export default function ProductDetailPage() {
                             </div>
                         </div>
                     </div>
+
+                    {/* Brand (bisa diketuk → halaman produk brand). Sembunyi bila tak ada brand. */}
+                    {brand && (
+                        <Link
+                            href={`/reseller/brands/${brand.id}`}
+                            className="flex items-center gap-3 rounded-xl border p-3 transition-colors hover:bg-muted/50"
+                        >
+                            <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted">
+                                {brand.logoUrl ? (
+                                    <Image
+                                        src={brand.logoUrl}
+                                        alt={brand.name}
+                                        width={48}
+                                        height={48}
+                                        className="h-full w-full object-contain"
+                                    />
+                                ) : (
+                                    <Building className="h-6 w-6 text-muted-foreground" />
+                                )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                                <p className="text-xs text-muted-foreground">Brand</p>
+                                <p className="truncate text-sm font-semibold">{brand.name}</p>
+                            </div>
+                            <span className="shrink-0 text-sm font-medium text-primary">Lihat produk</span>
+                        </Link>
+                    )}
 
                     {/* Trust badges */}
                     <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted-foreground">

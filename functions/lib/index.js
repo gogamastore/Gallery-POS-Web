@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.onReviewWritten = exports.verifyWhatsappOtp = exports.sendWhatsappOtp = exports.checkExpiredOrders = exports.biteshipWebhook = exports.trackBiteshipOrder = exports.createBiteshipOrder = exports.getBiteshipCouriers = exports.getBiteshipRates = exports.searchBiteshipArea = exports.handleMidtransNotification = exports.createMidtransTransaction = void 0;
+exports.onOrderWritten = exports.onReviewWritten = exports.verifyWhatsappOtp = exports.sendWhatsappOtp = exports.checkExpiredOrders = exports.biteshipWebhook = exports.trackBiteshipOrder = exports.createBiteshipOrder = exports.getBiteshipCouriers = exports.getBiteshipRates = exports.searchBiteshipArea = exports.handleMidtransNotification = exports.createMidtransTransaction = void 0;
 const app_1 = require("firebase-admin/app");
 (0, app_1.initializeApp)();
 var midtrans_1 = require("./midtrans");
@@ -20,4 +20,6 @@ Object.defineProperty(exports, "sendWhatsappOtp", { enumerable: true, get: funct
 Object.defineProperty(exports, "verifyWhatsappOtp", { enumerable: true, get: function () { return whatsapp_1.verifyWhatsappOtp; } });
 var reviews_1 = require("./reviews");
 Object.defineProperty(exports, "onReviewWritten", { enumerable: true, get: function () { return reviews_1.onReviewWritten; } });
+var sales_1 = require("./sales");
+Object.defineProperty(exports, "onOrderWritten", { enumerable: true, get: function () { return sales_1.onOrderWritten; } });
 //# sourceMappingURL=index.js.map

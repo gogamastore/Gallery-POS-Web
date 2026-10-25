@@ -11,7 +11,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, UserCircle, ShieldCheck, Home, LogOut, ChevronRight, Wallet, Package, Star, ShieldQuestion } from 'lucide-react';
+import { Loader2, UserCircle, ShieldCheck, Home, LogOut, ChevronRight, Wallet, Package, Star, ShieldQuestion, Headset } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -128,6 +128,14 @@ export default function ProfilePage() {
                             <div className="flex items-center p-3 md:p-4 rounded-lg hover:bg-muted/50 cursor-pointer">
                                 <ShieldQuestion className="h-5 w-5 mr-4 text-muted-foreground"/>
                                 <span className="flex-grow font-medium text-sm md:text-base">Kebijakan Privasi & FAQ</span>
+                                <ChevronRight className="h-5 w-5 text-muted-foreground"/>
+                            </div>
+                        </Link>
+                         <Separator/>
+                        <Link href="/reseller/contact">
+                            <div className="flex items-center p-3 md:p-4 rounded-lg hover:bg-muted/50 cursor-pointer">
+                                <Headset className="h-5 w-5 mr-4 text-muted-foreground"/>
+                                <span className="flex-grow font-medium text-sm md:text-base">Hubungi Kami</span>
                                 <ChevronRight className="h-5 w-5 text-muted-foreground"/>
                             </div>
                         </Link>

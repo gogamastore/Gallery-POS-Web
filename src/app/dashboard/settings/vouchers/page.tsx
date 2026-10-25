@@ -49,6 +49,9 @@ import {
 import { useRouter } from "next/navigation";
 
 type DiscountType = "fixed" | "percentage";
+// perDay  = batas berlaku per 24 jam (default lama)
+// perEvent = batas berlaku sekali untuk SELURUH periode event
+type LimitType = "perDay" | "perEvent";
 
 interface Voucher {
   id: string;
@@ -61,7 +64,8 @@ interface Voucher {
   isActive: boolean;
   startDate?: any; // Timestamp — awal masa berlaku
   endDate?: any; // Timestamp — akhir masa berlaku
-  dailyLimitPerUser: number; // batas pakai per user / 24 jam (0 = tanpa batas)
+  dailyLimitPerUser: number; // jumlah maksimal pemakaian per user (0 = tanpa batas)
+  limitType?: LimitType; // cakupan batas: per hari / per event
   createdAt?: any;
 }
 
@@ -92,6 +96,7 @@ const emptyForm = {
   startDate: "",
   endDate: "",
   dailyLimitPerUser: 1,
+  limitType: "perDay" as LimitType,
 };
 
 export default function VouchersPage() {
@@ -137,6 +142,7 @@ export default function VouchersPage() {
         startDate: tsToInput(v.startDate),
         endDate: tsToInput(v.endDate),
         dailyLimitPerUser: v.dailyLimitPerUser ?? 1,
+        limitType: v.limitType ?? "perDay",
       });
     } else {
       setEditing(null);
@@ -182,6 +188,7 @@ export default function VouchersPage() {
         startDate: startTs,
         endDate: endTs,
         dailyLimitPerUser: Number(form.dailyLimitPerUser) || 0,
+        limitType: form.limitType,
       };
       if (editing) {
         await updateDoc(doc(db, "vouchers", editing.id), payload);
@@ -273,7 +280,9 @@ export default function VouchersPage() {
                         {v.startDate || v.endDate
                           ? `Berlaku ${tsToInput(v.startDate) || "—"} s/d ${tsToInput(v.endDate) || "—"}`
                           : "Tanpa batas waktu"}
-                        {v.dailyLimitPerUser ? ` · ${v.dailyLimitPerUser}×/user/hari` : " · pakai tanpa batas"}
+                        {v.dailyLimitPerUser
+                          ? ` · ${v.dailyLimitPerUser}×/user/${v.limitType === "perEvent" ? "event" : "hari"}`
+                          : " · pakai tanpa batas"}
                       </p>
                       {v.description && (
                         <p className="text-xs text-muted-foreground">{v.description}</p>
@@ -392,7 +401,32 @@ export default function VouchersPage() {
               Kosongkan tanggal untuk berlaku tanpa batas waktu.
             </p>
             <div className="space-y-2">
-              <Label htmlFor="dailyLimit">Batas pakai per user / 24 jam — 0 = tanpa batas</Label>
+              <Label>Cakupan Batas Pakai</Label>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant={form.limitType === "perDay" ? "default" : "outline"}
+                  className="flex-1"
+                  onClick={() => setForm({ ...form, limitType: "perDay" })}
+                >
+                  Per Hari
+                </Button>
+                <Button
+                  type="button"
+                  variant={form.limitType === "perEvent" ? "default" : "outline"}
+                  className="flex-1"
+                  onClick={() => setForm({ ...form, limitType: "perEvent" })}
+                >
+                  Per Event
+                </Button>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="dailyLimit">
+                {form.limitType === "perEvent"
+                  ? "Batas pakai per user / seluruh event — 0 = tanpa batas"
+                  : "Batas pakai per user / 24 jam — 0 = tanpa batas"}
+              </Label>
               <Input
                 id="dailyLimit"
                 type="number"
@@ -400,7 +434,9 @@ export default function VouchersPage() {
                 onChange={(e) => setForm({ ...form, dailyLimitPerUser: Number(e.target.value) })}
               />
               <p className="text-xs text-muted-foreground">
-                Contoh: 1 = tiap user boleh pakai voucher ini 1× per hari selama masa berlaku.
+                {form.limitType === "perEvent"
+                  ? "Contoh: 1 = tiap user hanya boleh pakai voucher ini 1× selama seluruh periode event (bukan per hari)."
+                  : "Contoh: 1 = tiap user boleh pakai voucher ini 1× per hari selama masa berlaku."}
               </p>
             </div>
             <div className="space-y-2">

@@ -259,6 +259,16 @@ export default function TrendingProductsPage() {
             <h1 className="text-xl md:text-2xl font-bold">Pengaturan Produk Trending</h1>
         </div>
 
+      <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">
+        <p className="font-semibold">Produk Trending kini OTOMATIS.</p>
+        <p className="mt-1">
+          Blok &quot;Produk Trending&quot; di aplikasi/halaman reseller sekarang diurutkan otomatis
+          berdasarkan produk <strong>paling banyak terjual</strong> — Anda tidak perlu mengaturnya
+          manual lagi. Daftar manual di bawah <strong>tidak lagi dipakai</strong> untuk menampilkan
+          trending, dan boleh dibiarkan atau dikosongkan.
+        </p>
+      </div>
+
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>

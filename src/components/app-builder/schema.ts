@@ -82,6 +82,8 @@ export interface ProductCardStyle {
   showCartButton: boolean;
   /** Tampilkan rata-rata bintang + jumlah ulasan pada kartu produk. */
   showRating: boolean;
+  /** Tampilkan jumlah terjual (soldCount) pada kartu produk. */
+  showSold: boolean;
   cardColor: string;
   shadowEnabled: boolean;
   shadowBlur: number;
@@ -288,6 +290,7 @@ export const DEFAULT_CARD: ProductCardStyle = {
   showDiscountBadge: true,
   showCartButton: false,
   showRating: false,
+  showSold: false,
   cardColor: "",
   shadowEnabled: true,
   shadowBlur: 8,

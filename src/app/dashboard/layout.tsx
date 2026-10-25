@@ -21,7 +21,7 @@ function Logo() {
   return (
     <Link href="/dashboard" className="flex items-center gap-2 font-semibold font-headline text-lg">
       <Image src="https://firebasestorage.googleapis.com/v0/b/gallerypos.firebasestorage.app/o/Manafidh%20Logo.png?alt=media&token=4472e2c9-c319-4222-85e8-708dbf36e7be" alt="Manafidh Store Logo" width={32} height={32} />
-       <span className="group-[.collapsed]:hidden">Manafidh Office</span>
+       <span className="group-[.collapsed]:hidden">Manafidh Store</span>
     </Link>
   );
 }
@@ -83,13 +83,15 @@ export default function DashboardLayout({
   return (
     <PurchaseCartProvider>
       <div className="grid min-h-screen w-full md:grid-cols-[220px_1fr] lg:grid-cols-[280px_1fr] group">
-        <div className="hidden border-r bg-card md:block">
+        {/* Sidebar menempel (sticky) setinggi layar: saat halaman di-scroll,
+            navbar samping tetap di tempat dan punya scroll-nya sendiri. */}
+        <div className="hidden border-r bg-card md:block md:sticky md:top-0 md:h-screen">
           <div className="flex h-full max-h-screen flex-col">
-            <div className="flex h-14 items-center border-b px-4 lg:h-[60px] lg:px-6">
+            <div className="flex h-14 shrink-0 items-center border-b px-4 lg:h-[60px] lg:px-6">
               <Logo />
             </div>
-            {/* Area navigasi — pink merek Manafidh. */}
-            <div className="flex-1 overflow-y-auto bg-primary text-primary-foreground">
+            {/* Area navigasi — pink merek Manafidh (scroll sendiri). */}
+            <div className="flex-1 min-h-0 overflow-y-auto bg-primary text-primary-foreground">
               <nav className="grid items-start px-2 py-3 text-sm font-medium lg:px-4">
                 <MainNav />
               </nav>

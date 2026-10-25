@@ -16,6 +16,7 @@ import {
   FileWarning,
   Scale,
   Warehouse,
+  Truck,
   Package,
   Replace,
   Receipt,
@@ -41,6 +42,12 @@ const reportCards = [
     description: "Biaya admin, layanan & layanan pembayaran dari pembeli marketplace.",
     icon: Receipt,
     href: "/dashboard/reports/admin-fees",
+  },
+  {
+    title: "Laporan Rincian Biaya Pengiriman",
+    description: "Total ongkir pesanan pembeli yang diproses/divalidasi per hari.",
+    icon: Truck,
+    href: "/dashboard/reports/shipping-fees",
   },
   {
     title: "Laporan Transaksi Pembelian",

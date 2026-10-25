@@ -65,6 +65,8 @@ interface DailyRevenue {
   total: number;
   orderCount: number;
   breakdown: PaymentBreakdown;
+  startingCash: number; // modal awal shift yang dibuka hari itu
+  expenses: number; // pengeluaran selama jam shift hari itu
 }
 
 interface RawOrder {
@@ -132,6 +134,12 @@ export default function CashdrawerReportPage() {
   });
   const [activeFilter, setActiveFilter] = useState<QuickFilter>("thisMonth");
   const [rawOrders, setRawOrders] = useState<RawOrder[]>([]);
+  const [rawShifts, setRawShifts] = useState<
+    { date: Date; endTime: Date | null; cashierId?: string; startingCash: number }[]
+  >([]);
+  const [rawExpenses, setRawExpenses] = useState<
+    { date: Date; cashierId?: string; amount: number }[]
+  >([]);
   const [sourceFilter, setSourceFilter] = useState<"all" | "pos" | "marketplace">("all");
   const [cashierFilter, setCashierFilter] = useState<string>("all"); // cashierId | "all"
   const [selectedDay, setSelectedDay] = useState<DailyRevenue | null>(null);
@@ -200,10 +208,48 @@ export default function CashdrawerReportPage() {
         });
       });
 
+      // Modal awal (shift) & pengeluaran dalam rentang → rekonsiliasi laci kas.
+      // Query satu field range masing-masing (tanpa index komposit).
+      const shiftsSnap = await getDocs(
+        query(
+          collection(db, "cashdrawers"),
+          where("startTime", ">=", from),
+          where("startTime", "<=", to)
+        )
+      );
+      const shifts = shiftsSnap.docs.map((d) => {
+        const data = d.data();
+        return {
+          date: toDate(data.startTime) || from,
+          endTime: toDate(data.endTime),
+          cashierId: data.cashierId as string | undefined,
+          startingCash: parseTotal(data.startingCash),
+        };
+      });
+      const expSnap = await getDocs(
+        query(
+          collection(db, "operational_expenses"),
+          where("date", ">=", from),
+          where("date", "<=", to)
+        )
+      );
+      const expenses = expSnap.docs.map((d) => {
+        const data = d.data();
+        return {
+          date: toDate(data.date) || from,
+          cashierId: data.cashierId as string | undefined,
+          amount: parseTotal(data.amount),
+        };
+      });
+
       setRawOrders(rows);
+      setRawShifts(shifts);
+      setRawExpenses(expenses);
     } catch (error) {
       console.error("Error fetching cashdrawer report:", error);
       setRawOrders([]);
+      setRawShifts([]);
+      setRawExpenses([]);
     } finally {
       setLoading(false);
     }
@@ -234,7 +280,15 @@ export default function CashdrawerReportPage() {
     }
   }, [cashiers, cashierFilter]);
 
-  const { daily, totalRevenue, totalTransactions } = useMemo(() => {
+  const {
+    daily,
+    totalRevenue,
+    totalTransactions,
+    startingCash,
+    cashIncome,
+    totalExpenses,
+    endingCash,
+  } = useMemo(() => {
     const filtered = rawOrders.filter((o) => {
       if (sourceFilter !== "all" && o.source !== sourceFilter) return false;
       if (cashierFilter !== "all" && o.cashierId !== cashierFilter) return false;
@@ -252,6 +306,8 @@ export default function CashdrawerReportPage() {
           total: 0,
           orderCount: 0,
           breakdown: emptyBreakdown(),
+          startingCash: 0,
+          expenses: 0,
         } as DailyRevenue);
       entry.total += o.total;
       entry.orderCount += 1;
@@ -259,15 +315,65 @@ export default function CashdrawerReportPage() {
       map.set(key, entry);
     });
 
+    // Shift (ikut filter kasir) + modal awal per hari (hari shift dibuka).
+    const shifts = rawShifts.filter(
+      (s) => cashierFilter === "all" || s.cashierId === cashierFilter
+    );
+    const startByDay = new Map<string, number>();
+    let startingCash = 0;
+    shifts.forEach((s) => {
+      startingCash += s.startingCash;
+      const k = format(startOfDay(s.date), "yyyy-MM-dd");
+      startByDay.set(k, (startByDay.get(k) ?? 0) + s.startingCash);
+    });
+
+    // PENGELUARAN hanya selama JAM SHIFT AKTIF (waktu ∈ [shift.start, shift.end]
+    // & kasir sama). Bila ada 2 shift bergantian dalam sehari, tiap pengeluaran
+    // masuk ke shift yang benar — shift ke-2 hanya dapat pengeluaran setelah ia
+    // dibuka. Pengeluaran di luar jam shift tidak dihitung.
+    const rangeEnd = new Date();
+    const expByDay = new Map<string, number>();
+    let totalExpenses = 0;
+    rawExpenses
+      .filter((e) => cashierFilter === "all" || e.cashierId === cashierFilter)
+      .forEach((e) => {
+        const shift = shifts.find(
+          (s) =>
+            s.cashierId === e.cashierId &&
+            e.date >= s.date &&
+            e.date <= (s.endTime ?? rangeEnd)
+        );
+        if (!shift) return;
+        totalExpenses += e.amount;
+        const k = format(startOfDay(shift.date), "yyyy-MM-dd");
+        expByDay.set(k, (expByDay.get(k) ?? 0) + e.amount);
+      });
+
+    const cashIncome = filtered.reduce(
+      (acc, o) => (bucketOf(o.method) === "cash" ? acc + o.total : acc),
+      0
+    );
+
+    // Lampirkan modal awal + pengeluaran per hari ke tiap entry.
+    map.forEach((entry) => {
+      entry.startingCash = startByDay.get(entry.key) ?? 0;
+      entry.expenses = expByDay.get(entry.key) ?? 0;
+    });
+
     const list = Array.from(map.values()).sort(
       (a, b) => b.date.getTime() - a.date.getTime()
     );
+
     return {
       daily: list,
       totalRevenue: filtered.reduce((acc, o) => acc + o.total, 0),
       totalTransactions: filtered.length,
+      cashIncome,
+      startingCash,
+      totalExpenses,
+      endingCash: startingCash + cashIncome - totalExpenses,
     };
-  }, [rawOrders, sourceFilter, cashierFilter]);
+  }, [rawOrders, rawShifts, rawExpenses, sourceFilter, cashierFilter]);
 
   const quickFilters: { value: QuickFilter; label: string }[] = [
     { value: "today", label: "Hari Ini" },
@@ -420,6 +526,42 @@ export default function CashdrawerReportPage() {
         />
       </div>
 
+      {/* Rekonsiliasi laci kas */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Wallet className="h-5 w-5 text-teal-600" /> Rekonsiliasi Laci Kas
+          </CardTitle>
+          <CardDescription>
+            Modal Awal + Pemasukan Tunai − Pengeluaran = Modal Akhir. QRIS &amp;
+            Transfer tidak termasuk Modal Akhir (bukan uang tunai di laci) — hanya
+            masuk Total Penjualan.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-1">
+          <ReconRow
+            label="Modal Awal (Cash Awal)"
+            value={loading ? null : formatCurrency(startingCash)}
+          />
+          <ReconRow
+            label="+ Pemasukan Tunai (Penjualan)"
+            value={loading ? null : formatCurrency(cashIncome)}
+          />
+          <ReconRow
+            label="− Pengeluaran"
+            value={loading ? null : formatCurrency(totalExpenses)}
+            accent="text-red-600"
+          />
+          <Separator className="my-2" />
+          <ReconRow
+            label="Modal Akhir (Ending Cash)"
+            value={loading ? null : formatCurrency(endingCash)}
+            bold
+            accent="text-teal-700"
+          />
+        </CardContent>
+      </Card>
+
       {/* Daftar harian */}
       <Card>
         <CardHeader>
@@ -550,6 +692,40 @@ export default function CashdrawerReportPage() {
                     {formatCurrency(selectedDay.total)}
                   </span>
                 </div>
+
+                <Separator />
+
+                <div>
+                  <p className="mb-2 text-sm font-semibold">
+                    Rincian Cashdrawer
+                  </p>
+                  <div className="space-y-1">
+                    <ReconRow
+                      label="Modal Awal (Cash Awal)"
+                      value={formatCurrency(selectedDay.startingCash)}
+                    />
+                    <ReconRow
+                      label="+ Pemasukan Tunai"
+                      value={formatCurrency(selectedDay.breakdown.cash)}
+                    />
+                    <ReconRow
+                      label="− Pengeluaran"
+                      value={formatCurrency(selectedDay.expenses)}
+                      accent="text-red-600"
+                    />
+                    <Separator className="my-1" />
+                    <ReconRow
+                      label="Modal Akhir (Ending Cash)"
+                      value={formatCurrency(
+                        selectedDay.startingCash +
+                          selectedDay.breakdown.cash -
+                          selectedDay.expenses
+                      )}
+                      bold
+                      accent="text-teal-700"
+                    />
+                  </div>
+                </div>
               </div>
             </>
           )}
@@ -605,6 +781,33 @@ function BreakdownRow({
         <span className="text-sm">{label}</span>
       </div>
       <span className="text-sm font-semibold">{formatCurrency(amount)}</span>
+    </div>
+  );
+}
+
+function ReconRow({
+  label,
+  value,
+  bold,
+  accent,
+}: {
+  label: string;
+  value: string | null;
+  bold?: boolean;
+  accent?: string;
+}) {
+  return (
+    <div className="flex items-center justify-between py-1.5">
+      <span className={`text-sm ${bold ? "font-bold" : ""}`}>{label}</span>
+      {value === null ? (
+        <Skeleton className="h-5 w-24" />
+      ) : (
+        <span
+          className={`font-semibold ${bold ? "text-base" : "text-sm"} ${accent ?? ""}`}
+        >
+          {value}
+        </span>
+      )}
     </div>
   );
 }

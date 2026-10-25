@@ -4,7 +4,7 @@
 import { createContext, useContext, useEffect } from "react";
 import Link from "next/link";
 import { ChevronRight, Loader2, Package, Search, ShoppingBag, Star, Store } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatSold } from "@/lib/utils";
 import {
   CATEGORY_SLIDER_MAX,
   orderParents,
@@ -199,6 +199,11 @@ function ProductCard({
           <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
           <span className="font-semibold text-gray-800">{(p.ratingAvg ?? 0).toFixed(1)}</span>
           <span>({p.ratingCount})</span>
+        </div>
+      )}
+      {style.showSold && (p.soldCount ?? 0) > 0 && (
+        <div className={cn("text-[11px] text-gray-500", isSimple && "text-center")}>
+          {formatSold(p.soldCount ?? 0)} terjual
         </div>
       )}
       {style.showStock && (

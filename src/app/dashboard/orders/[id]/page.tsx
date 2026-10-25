@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { db, functions } from "@/lib/firebase";
 import {
@@ -9,7 +9,6 @@ import {
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -21,11 +20,12 @@ import {
   DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import {
-  ArrowLeft, Loader2, MapPin, CheckCircle2, ExternalLink, Clock,
+  ArrowLeft, Loader2, CheckCircle2, ExternalLink, Clock,
   Truck, PackageCheck, XCircle, RefreshCw, AlertCircle, Printer,
-  FileText, FileBox, Trash2, Package, Headset, MessageSquare, Phone,
+  FileText, FileBox, Trash2, Headset, MessageSquare, Phone, Undo2,
 } from "lucide-react";
 import Image from "next/image";
+import ShippingTracking from "@/components/orders/shipping-tracking";
 import { format } from "date-fns";
 import { id as localeId } from "date-fns/locale";
 import jsPDF from "jspdf";
@@ -41,22 +41,6 @@ const createBiteshipOrderFn = httpsCallable<
   { orderId: string },
   { success: boolean; biteshipOrderId: string; courierTrackingId?: string; waybillId?: string; trackingUrl?: string; status?: string }
 >(functions, "createBiteshipOrder");
-
-const trackBiteshipOrderFn = httpsCallable<
-  { orderId: string },
-  {
-    hasDelivery: boolean;
-    biteshipOrderId?: string;
-    courierTrackingId?: string;
-    waybillId?: string;
-    status?: string;
-    courierName?: string;
-    driverName?: string;
-    driverPhone?: string;
-    trackingUrl?: string;
-    history?: Array<{ timestamp: string; status: string; note: string }>;
-  }
->(functions, "trackBiteshipOrder");
 
 // ── Constants ──────────────────────────────────────────────────────
 
@@ -122,18 +106,9 @@ interface Order {
   deliveryNotes?: string;
   midtransToken?: string;
   midtransRedirectUrl?: string;
+  stockRestored?: boolean; // true bila stok sudah dikembalikan (batal/retur)
 }
 
-interface TrackingResult {
-  hasDelivery: boolean;
-  status?: string;
-  courierName?: string;
-  driverName?: string;
-  driverPhone?: string;
-  trackingUrl?: string;
-  waybillId?: string;
-  history?: Array<{ timestamp: string; status: string; note: string }>;
-}
 
 // ── Helpers ────────────────────────────────────────────────────────
 
@@ -188,11 +163,16 @@ function fromFirestore(docId: string, data: Record<string, any>): Order {
     deliveryNotes: data.deliveryNotes,
     midtransToken: data.midtransToken,
     midtransRedirectUrl: data.midtransRedirectUrl,
+    stockRestored: data.stockRestored === true,
   };
 }
 
-function getStatusInfo(status: string) {
+function getStatusInfo(status: string, biteshipStatus?: string) {
   const s = (status ?? "").toLowerCase();
+  // Pengembalian (retur) dari kurir — tampilkan terpisah dari "Dibatalkan".
+  if ((biteshipStatus ?? "").toLowerCase().includes("return")) {
+    return { title: "Pesanan Dikembalikan (Retur)", icon: Undo2, color: "text-amber-700", bg: "bg-amber-50 border-amber-200" };
+  }
   if (s === "pending")    return { title: "Menunggu Pembayaran", icon: Clock,        color: "text-orange-600", bg: "bg-orange-50 border-orange-200" };
   if (s === "processing") return { title: "Perlu Dikirim",       icon: RefreshCw,    color: "text-blue-600",   bg: "bg-blue-50 border-blue-200" };
   if (s === "shipped" || s === "dikirim")
@@ -370,14 +350,11 @@ export default function OrderDetailPage() {
   const [isProcessingShipment, setIsProcessingShipment] = useState(false);
   const [confirmProcessOpen, setConfirmProcessOpen] = useState(false);
 
-  // Tracking
-  const [trackingResult, setTrackingResult] = useState<TrackingResult | null>(null);
-  const [isTracking, setIsTracking] = useState(false);
-  const [trackingError, setTrackingError] = useState<string | null>(null);
 
   // Confirm dialogs
   const [confirmDeliveredOpen, setConfirmDeliveredOpen] = useState(false);
   const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
+  const [confirmRestockOpen, setConfirmRestockOpen] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -423,22 +400,6 @@ export default function OrderDetailPage() {
     }
   }
 
-  // ── Lacak Pengiriman ───────────────────────────────────────────
-
-  const handleTrack = useCallback(async () => {
-    if (!order) return;
-    setIsTracking(true);
-    setTrackingError(null);
-    try {
-      const res = await trackBiteshipOrderFn({ orderId: order.id });
-      setTrackingResult(res.data);
-    } catch (err: any) {
-      setTrackingError(err?.message ?? "Gagal mengambil data tracking.");
-    } finally {
-      setIsTracking(false);
-    }
-  }, [order]);
-
   // ── Tandai Selesai ─────────────────────────────────────────────
 
   async function handleMarkDelivered() {
@@ -468,6 +429,7 @@ export default function OrderDetailPage() {
       batch.update(doc(db, "orders", order.id), {
         status: "Cancelled",
         paymentStatus: "cancelled",
+        stockRestored: true,
         updatedAt: serverTimestamp(),
       });
       for (const item of order.products) {
@@ -482,6 +444,42 @@ export default function OrderDetailPage() {
       setConfirmCancelOpen(false);
     } catch (err: any) {
       toast({ title: "Gagal membatalkan", description: err?.message, variant: "destructive" });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  // ── Barang Retur Diterima → Kembalikan Stok ────────────────────
+  // Dipakai saat paket yang DIKEMBALIKAN kurir (retur) sudah diterima kembali
+  // oleh toko. Mengembalikan stok sekali saja (dijaga flag stockRestored).
+
+  async function handleRestockReturn() {
+    if (!order) return;
+    if (order.stockRestored) {
+      toast({ title: "Stok sudah dikembalikan sebelumnya." });
+      setConfirmRestockOpen(false);
+      return;
+    }
+    setIsSubmitting(true);
+    const batch = writeBatch(db);
+    try {
+      batch.update(doc(db, "orders", order.id), {
+        stockRestored: true,
+        returnReceivedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      for (const item of order.products) {
+        const pdoc = await getDoc(doc(db, "products", item.productId));
+        if (pdoc.exists())
+          batch.update(doc(db, "products", item.productId), {
+            stock: (pdoc.data().stock ?? 0) + item.quantity,
+          });
+      }
+      await batch.commit();
+      toast({ title: "Barang retur diterima — stok dikembalikan." });
+      setConfirmRestockOpen(false);
+    } catch (err: any) {
+      toast({ title: "Gagal mengembalikan stok", description: err?.message, variant: "destructive" });
     } finally {
       setIsSubmitting(false);
     }
@@ -606,7 +604,7 @@ export default function OrderDetailPage() {
     );
   }
 
-  const statusInfo = getStatusInfo(order.status);
+  const statusInfo = getStatusInfo(order.status, order.biteshipStatus);
   const StatusIcon = statusInfo.icon;
   const sLower = (order.status ?? "").toLowerCase();
   const isPendingPayment = order.paymentStatus === "pending_payment";
@@ -614,6 +612,7 @@ export default function OrderDetailPage() {
   const isShipped = ["shipped", "dikirim"].includes(sLower);
   const isDelivered = ["delivered", "selesai"].includes(sLower);
   const isCancelled = ["cancelled", "dibatalkan"].includes(sLower) || ["cancelled", "failed"].includes(order.paymentStatus.toLowerCase());
+  const isReturned = (order.biteshipStatus ?? "").toLowerCase().includes("return");
   const hasBiteship = !!order.biteshipOrderId;
   const instant = isInstantCourier(order.biteshipCourierCode);
   const subtotal = order.subtotal || order.products.reduce((s, p) => s + p.price * p.quantity, 0);
@@ -671,10 +670,6 @@ export default function OrderDetailPage() {
             </Button>
           ) : (
             <div className="flex gap-2 flex-wrap">
-              <Button variant="outline" onClick={handleTrack} disabled={isTracking}>
-                {isTracking ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <MapPin className="mr-2 h-4 w-4" />}
-                {isTracking ? "Memuat..." : "Lacak Pengiriman"}
-              </Button>
               {order.waybillId && (
                 <Button variant="outline" onClick={() => printWaybill(order, storeInfo)}>
                   <Printer className="mr-2 h-4 w-4" />Cetak Resi
@@ -695,10 +690,6 @@ export default function OrderDetailPage() {
       {/* Dikirim */}
       {isShipped && (
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={handleTrack} disabled={isTracking}>
-            {isTracking ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <MapPin className="mr-2 h-4 w-4" />}
-            {isTracking ? "Memuat..." : "Lacak Pengiriman"}
-          </Button>
           {order.waybillId && (
             <Button variant="outline" onClick={() => printWaybill(order, storeInfo)}>
               <Printer className="mr-2 h-4 w-4" />Cetak Resi
@@ -818,86 +809,9 @@ export default function OrderDetailPage() {
         {order.deliveryNotes && <InfoRow label="Catatan Kurir" value={order.deliveryNotes} />}
       </Section>
 
-      {/* ── Riwayat Tracking ── */}
+      {/* ── Lacak Pengiriman (riwayat otomatis + foto bukti) ── */}
       {hasBiteship && (
-        <div className="space-y-2">
-          {!trackingResult && (
-            <Button variant="outline" className="w-full" onClick={handleTrack} disabled={isTracking}>
-              {isTracking ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <MapPin className="mr-2 h-4 w-4" />}
-              {isTracking ? "Memuat riwayat..." : "Muat Riwayat Tracking"}
-            </Button>
-          )}
-
-          {trackingError && (
-            <div className="flex items-center gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
-              <AlertCircle className="h-4 w-4 shrink-0" />{trackingError}
-            </div>
-          )}
-
-          {trackingResult?.hasDelivery && (
-            <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
-              <div className="px-4 py-3 border-b bg-muted/30 flex items-center justify-between">
-                <p className="font-semibold text-sm">Riwayat Tracking</p>
-                <div className="flex items-center gap-2">
-                  {trackingResult.status && (
-                    <Badge variant="secondary" className="text-xs">
-                      {trackingResult.status.toUpperCase()}
-                    </Badge>
-                  )}
-                  <Button variant="ghost" size="sm" onClick={handleTrack} disabled={isTracking}>
-                    <RefreshCw className={`h-3 w-3 ${isTracking ? "animate-spin" : ""}`} />
-                  </Button>
-                </div>
-              </div>
-              <div className="px-4 py-4 space-y-2">
-                {(trackingResult.courierName || trackingResult.driverName) && (
-                  <div className="text-xs text-muted-foreground space-y-0.5">
-                    {trackingResult.courierName && <p>Kurir: {trackingResult.courierName}</p>}
-                    {trackingResult.driverName && (
-                      <p>Driver: {trackingResult.driverName}
-                        {trackingResult.driverPhone ? ` (${trackingResult.driverPhone})` : ""}
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {trackingResult.history && trackingResult.history.length > 0 && (
-                  <>
-                    <Separator className="my-2" />
-                    <div className="space-y-3">
-                      {trackingResult.history.map((h, i) => (
-                        <div key={i} className="flex gap-3">
-                          <div className="flex flex-col items-center">
-                            <div className={`w-2 h-2 rounded-full mt-1 shrink-0 ${i === 0 ? "bg-blue-500" : "bg-gray-300"}`} />
-                            {i < trackingResult.history!.length - 1 && (
-                              <div className="w-px flex-1 bg-gray-200 mt-1" />
-                            )}
-                          </div>
-                          <div className="pb-2">
-                            <p className="text-sm font-medium">{h.status}</p>
-                            {h.note && <p className="text-xs text-muted-foreground">{h.note}</p>}
-                            <p className="text-xs text-muted-foreground">{h.timestamp}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                )}
-
-                {trackingResult.history?.length === 0 && (
-                  <p className="text-xs text-muted-foreground">Belum ada riwayat pergerakan paket.</p>
-                )}
-              </div>
-            </div>
-          )}
-
-          {trackingResult && !trackingResult.hasDelivery && (
-            <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50 border text-sm text-muted-foreground">
-              <Package className="h-4 w-4 shrink-0" />
-              Belum ada data tracking dari Biteship.
-            </div>
-          )}
-        </div>
+        <ShippingTracking orderId={order.id} deliveryTrackingUrl={order.deliveryTrackingUrl} />
       )}
 
       {/* ── Alamat Pengiriman ── */}
@@ -1019,7 +933,7 @@ export default function OrderDetailPage() {
                 <Printer className="mr-2 h-4 w-4" />Cetak Resi
               </Button>
             )}
-            {!isCancelled && !isDelivered && (
+            {!isCancelled && !isDelivered && !isShipped && (
               <Button
                 variant="outline"
                 size="sm"
@@ -1028,6 +942,23 @@ export default function OrderDetailPage() {
               >
                 <XCircle className="mr-2 h-4 w-4" />Batalkan Pesanan
               </Button>
+            )}
+            {/* Pesanan DIKEMBALIKAN (retur): kembalikan stok saat barang
+                sudah diterima kembali oleh toko (sekali saja). */}
+            {isReturned && !order.stockRestored && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-amber-700 border-amber-400 hover:bg-amber-50"
+                onClick={() => setConfirmRestockOpen(true)}
+              >
+                <Undo2 className="mr-2 h-4 w-4" />Barang Retur Diterima → Kembalikan Stok
+              </Button>
+            )}
+            {isReturned && order.stockRestored && (
+              <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700">
+                <CheckCircle2 className="h-4 w-4" />Stok retur sudah dikembalikan
+              </span>
             )}
           </div>
           {/* Hubungi pembeli — wajib ada di semua status */}
@@ -1140,6 +1071,31 @@ export default function OrderDetailPage() {
             >
               {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Ya, Batalkan
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Konfirmasi Barang Retur Diterima → Kembalikan Stok */}
+      <AlertDialog open={confirmRestockOpen} onOpenChange={setConfirmRestockOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Barang retur sudah diterima?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Lakukan ini hanya jika paket yang dikembalikan sudah benar-benar sampai
+              kembali di toko. Stok produk pesanan ini akan ditambahkan kembali, dan
+              tindakan ini hanya bisa dilakukan sekali.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Belum</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleRestockReturn}
+              disabled={isSubmitting}
+              className="bg-amber-600 hover:bg-amber-700"
+            >
+              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Ya, Kembalikan Stok
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

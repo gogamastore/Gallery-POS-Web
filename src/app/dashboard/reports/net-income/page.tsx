@@ -61,41 +61,46 @@ export default function NetIncomeReportPage() {
         // 1. Fetch Sales (Revenue)
         const ordersQuery = query(
             collection(db, "orders"),
-            where("status", "in", ['Processing', 'processing', 'Delivered', 'delivered', 'Shipped', 'shipped']),
-            where("date", ">=", from),
-            where("date", "<=", to)
+            // Pesanan TERVALIDASI (POS 'success' + marketplace) — seragam dengan
+            // Laporan Penjualan & Laba-Rugi, memakai kunci `validatedAt`.
+            where("status", "in", ['Processing', 'processing', 'success', 'Shipped', 'shipped', 'Delivered', 'delivered']),
+            where("validatedAt", ">=", from),
+            where("validatedAt", "<=", to)
         );
         const ordersSnapshot = await getDocs(ordersQuery);
         let totalRevenue = 0;
+        let totalCogs = 0;
+        // Item TANPA snapshot modal → butuh harga beli produk SAAT INI (fallback).
         const soldProductsMap = new Map<string, number>();
 
         ordersSnapshot.docs.forEach(doc => {
             const data = doc.data();
             const total = typeof data.total === 'string' ? parseFloat(data.total.replace(/[^0-9]/g, '')) : data.total || 0;
             totalRevenue += total;
-            data.products?.forEach((p: { productId: string; quantity: number; }) => {
-                soldProductsMap.set(p.productId, (soldProductsMap.get(p.productId) || 0) + p.quantity);
+            data.products?.forEach((p: { productId: string; quantity: number; purchasePrice?: number }) => {
+                const qty = p.quantity || 0;
+                // HPP = SNAPSHOT modal saat validasi (products[].purchasePrice) bila
+                // ada; jika tidak, pakai harga beli produk saat ini — konsisten
+                // dengan Laporan Penjualan & Laba-Rugi.
+                if (typeof p.purchasePrice === 'number') {
+                    totalCogs += p.purchasePrice * qty;
+                } else {
+                    soldProductsMap.set(p.productId, (soldProductsMap.get(p.productId) || 0) + qty);
+                }
             });
         });
 
-        // 2. Fetch Purchase Prices for COGS
-        let totalCogs = 0;
+        // 2. COGS untuk item tanpa snapshot: pakai harga beli produk SAAT INI
         const productPurchasePrices = new Map<string, number>();
-        if (soldProductsMap.size > 0) {
-            for (const [productId, quantity] of soldProductsMap.entries()) {
-                let purchasePrice = productPurchasePrices.get(productId);
-                if (purchasePrice === undefined) {
-                    const productRef = doc(db, "products", productId);
-                    const productSnap = await getDoc(productRef);
-                    if (productSnap.exists()) {
-                        purchasePrice = productSnap.data().purchasePrice || 0;
-                        productPurchasePrices.set(productId, purchasePrice);
-                    } else {
-                        purchasePrice = 0; // Product might be deleted
-                    }
-                }
-                totalCogs += (purchasePrice || 0) * quantity;
+        for (const [productId, quantity] of soldProductsMap.entries()) {
+            let purchasePrice = productPurchasePrices.get(productId);
+            if (purchasePrice === undefined) {
+                const productRef = doc(db, "products", productId);
+                const productSnap = await getDoc(productRef);
+                purchasePrice = productSnap.exists() ? (productSnap.data().purchasePrice || 0) : 0;
+                productPurchasePrices.set(productId, purchasePrice);
             }
+            totalCogs += (purchasePrice || 0) * quantity;
         }
         
         // 3. Fetch Operational Expenses

@@ -65,6 +65,7 @@ interface DailyRevenue {
   total: number;
   orderCount: number;
   breakdown: PaymentBreakdown;
+  expenses: number; // pengeluaran operasional hari itu
 }
 
 // Baris order mentah (sebelum filter kanal/kasir) — disimpan agar ganti filter
@@ -129,6 +130,7 @@ export default function RevenueReportPage() {
   });
   const [activeFilter, setActiveFilter] = useState<QuickFilter>("thisMonth");
   const [rawOrders, setRawOrders] = useState<RawOrder[]>([]);
+  const [rawExpenses, setRawExpenses] = useState<{ date: Date; cashierId?: string; amount: number }[]>([]);
   const [sourceFilter, setSourceFilter] = useState<"all" | "pos" | "marketplace">("all");
   const [cashierFilter, setCashierFilter] = useState<string>("all"); // cashierId | "all"
   const [selectedDay, setSelectedDay] = useState<DailyRevenue | null>(null);
@@ -196,10 +198,26 @@ export default function RevenueReportPage() {
         });
       });
 
+      // Pengeluaran operasional dalam rentang (untuk Pendapatan Bersih).
+      const expSnap = await getDocs(
+        query(
+          collection(db, "operational_expenses"),
+          where("date", ">=", from),
+          where("date", "<=", to)
+        )
+      );
+      const expenses = expSnap.docs.map((d) => ({
+        date: toDate(d.data().date) || from,
+        cashierId: d.data().cashierId as string | undefined,
+        amount: parseTotal(d.data().amount),
+      }));
+
       setRawOrders(rows);
+      setRawExpenses(expenses);
     } catch (error) {
       console.error("Error fetching revenue report:", error);
       setRawOrders([]);
+      setRawExpenses([]);
     } finally {
       setLoading(false);
     }
@@ -233,7 +251,7 @@ export default function RevenueReportPage() {
   }, [cashiers, cashierFilter]);
 
   // Terapkan filter kanal + kasir, lalu agregasi per hari.
-  const { daily, totalRevenue, totalTransactions } = useMemo(() => {
+  const { daily, totalRevenue, totalTransactions, totalExpenses, netIncome } = useMemo(() => {
     const filtered = rawOrders.filter((o) => {
       if (sourceFilter !== "all" && o.source !== sourceFilter) return false;
       if (cashierFilter !== "all" && o.cashierId !== cashierFilter) return false;
@@ -251,6 +269,7 @@ export default function RevenueReportPage() {
           total: 0,
           orderCount: 0,
           breakdown: emptyBreakdown(),
+          expenses: 0,
         } as DailyRevenue);
       entry.total += o.total;
       entry.orderCount += 1;
@@ -258,15 +277,33 @@ export default function RevenueReportPage() {
       map.set(key, entry);
     });
 
+    // Pengeluaran operasional (ikut filter kasir; tidak terpengaruh filter
+    // sumber). Dibukukan total + per hari agar muncul di rincian harian.
+    const expByDay = new Map<string, number>();
+    let totalExpenses = 0;
+    rawExpenses
+      .filter((e) => cashierFilter === "all" || e.cashierId === cashierFilter)
+      .forEach((e) => {
+        totalExpenses += e.amount;
+        const k = format(startOfDay(e.date), "yyyy-MM-dd");
+        expByDay.set(k, (expByDay.get(k) ?? 0) + e.amount);
+      });
+    map.forEach((entry) => {
+      entry.expenses = expByDay.get(entry.key) ?? 0;
+    });
+
     const list = Array.from(map.values()).sort(
       (a, b) => b.date.getTime() - a.date.getTime()
     );
+    const totalRevenue = filtered.reduce((acc, o) => acc + o.total, 0);
     return {
       daily: list,
-      totalRevenue: filtered.reduce((acc, o) => acc + o.total, 0),
+      totalRevenue,
       totalTransactions: filtered.length,
+      totalExpenses,
+      netIncome: totalRevenue - totalExpenses,
     };
-  }, [rawOrders, sourceFilter, cashierFilter]);
+  }, [rawOrders, rawExpenses, sourceFilter, cashierFilter]);
 
   const quickFilters: { value: QuickFilter; label: string }[] = [
     { value: "today", label: "Hari Ini" },
@@ -409,6 +446,18 @@ export default function RevenueReportPage() {
           icon={Receipt}
           accent="text-blue-600"
         />
+        <SummaryCard
+          title="Total Pengeluaran"
+          value={loading ? null : formatCurrency(totalExpenses)}
+          icon={Wallet}
+          accent="text-red-600"
+        />
+        <SummaryCard
+          title="Pendapatan Bersih"
+          value={loading ? null : formatCurrency(netIncome)}
+          icon={DollarSign}
+          accent="text-teal-700"
+        />
       </div>
 
       {/* Daftar harian */}
@@ -542,6 +591,14 @@ export default function RevenueReportPage() {
                     {formatCurrency(selectedDay.total)}
                   </span>
                 </div>
+
+                <Separator />
+
+                <BreakdownRow
+                  label="Pengeluaran"
+                  amount={selectedDay.expenses}
+                  icon={Wallet}
+                />
               </div>
             </>
           )}

@@ -18,6 +18,7 @@ import {
   MapPin,
   MessageSquare,
   Truck,
+  Contact,
   Star,
   CreditCard,
   Bell,
@@ -46,6 +47,7 @@ const reportsSubMenu = [
   { href: "/dashboard/reports/revenue", label: "Pendapatan" },
   { href: "/dashboard/reports/cashdrawer", label: "Cashdrawer" },
   { href: "/dashboard/reports/admin-fees", label: "Admin & Layanan" },
+  { href: "/dashboard/reports/shipping-fees", label: "Biaya Pengiriman" },
   { href: "/dashboard/reports/product-sales", label: "Penjualan Produk" },
   { href: "/dashboard/reports/purchases", label: "Pembelian" },
   { href: "/dashboard/reports/operational-expenses", label: "Beban Operasional" },
@@ -91,6 +93,12 @@ const settingsSubMenu = [
     href: "/dashboard/settings/notification-popup",
     label: "Notifikasi",
     icon: Bell,
+    highlight: true,
+  },
+  {
+    href: "/dashboard/settings/contact-profile",
+    label: "Contact Profil",
+    icon: Contact,
     highlight: true,
   },
   {

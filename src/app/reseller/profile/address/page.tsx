@@ -142,10 +142,12 @@ function MapPicker({ initialLat, initialLng, onLocationPicked }: MapPickerProps)
     (async () => {
       try {
         const { setOptions, importLibrary } = await import("@googlemaps/js-api-loader");
+        // js-api-loader v2 memakai `v` (bukan `version`) untuk channel versi.
+        // "weekly" memastikan kelas Places baru (AutocompleteSuggestion) tersedia.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (setOptions as any)({
           key: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "",
-          version: "weekly",
+          v: "weekly",
         });
         await importLibrary("maps");
         // Places (New) untuk autocomplete — opsional; jika gagal, fallback ke
@@ -254,7 +256,12 @@ function MapPicker({ initialLat, initialLng, onLocationPicked }: MapPickerProps)
 
   const fetchSuggestions = async (input: string) => {
     const lib = placesLibRef.current;
-    if (!lib?.AutocompleteSuggestion) return; // Places (New) tak tersedia
+    if (!lib?.AutocompleteSuggestion) {
+      setSearchError(
+        "Autocomplete tidak termuat. Pastikan 'Places API (New)' aktif & Billing menyala di project."
+      );
+      return;
+    }
     try {
       if (!sessionTokenRef.current) sessionTokenRef.current = new lib.AutocompleteSessionToken();
       const { suggestions: sug } =
@@ -280,7 +287,11 @@ function MapPicker({ initialLat, initialLng, onLocationPicked }: MapPickerProps)
         .filter(Boolean);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       setSuggestions(list as any);
-    } catch {
+      setSearchError(list.length === 0 ? "Tidak ada hasil untuk kata kunci itu." : null);
+    } catch (e) {
+      // Tampilkan pesan error asli agar mudah didiagnosis (billing/API/quota).
+      console.error("Places autocomplete gagal:", e);
+      setSearchError(`Gagal memuat sugesti: ${(e as Error)?.message ?? String(e)}`);
       setSuggestions([]);
     }
   };
@@ -944,52 +955,15 @@ export default function AddressPage() {
               </div>
             </section>
 
-            {/* ── Langkah 3: Area Ongkir Biteship ── */}
+            {/* ── Estimasi Ongkir (otomatis dari peta) ── */}
             <section className="space-y-3">
               <h3 className="font-semibold text-sm">
-                Langkah 3: Area Ongkir
+                Estimasi Ongkir
                 <span className="text-muted-foreground font-normal ml-1">(otomatis dari peta)</span>
               </h3>
               <p className="text-xs text-muted-foreground">
-                Pilih area agar tarif kurir tampil instan saat checkout.
+                Area tujuan terisi otomatis dari titik peta yang Anda tentukan — dipakai agar tarif kurir tampil instan saat checkout.
               </p>
-
-              <div className="relative" ref={areaRef}>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    value={areaQuery}
-                    onChange={(e) => handleAreaQueryChange(e.target.value)}
-                    onFocus={() => areaResults.length > 0 && setShowAreaDropdown(true)}
-                    placeholder="Cari kecamatan / kota / kode pos..."
-                    className="pl-9 pr-9"
-                  />
-                  {isSearchingArea && (
-                    <Loader2 className="absolute right-9 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
-                  )}
-                  {hasBiteshipArea && (
-                    <button type="button" onClick={clearArea} className="absolute right-3 top-1/2 -translate-y-1/2">
-                      <X className="h-4 w-4 text-muted-foreground hover:text-foreground" />
-                    </button>
-                  )}
-                </div>
-
-                {showAreaDropdown && areaResults.length > 0 && (
-                  <div className="absolute z-50 w-full mt-1 bg-card border rounded-md shadow-lg max-h-52 overflow-y-auto">
-                    {areaResults.map((area) => (
-                      <button
-                        key={area.id}
-                        type="button"
-                        onMouseDown={() => selectArea(area)}
-                        className="w-full text-left px-4 py-3 hover:bg-muted transition-colors border-b last:border-b-0"
-                      >
-                        <p className="font-medium text-sm">{area.name}</p>
-                        {area.adminName && <p className="text-xs text-muted-foreground">{area.adminName}</p>}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
 
               {hasBiteshipArea ? (
                 <div className="flex items-center gap-2 p-3 rounded-lg bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800">
@@ -1000,7 +974,7 @@ export default function AddressPage() {
                 <Alert>
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription className="text-xs">
-                    Belum dipilih — ongkir perlu dicari manual saat checkout. Pin lokasi di peta untuk otomatis mengisi ini.
+                    Belum terdeteksi — tentukan titik lokasi di peta agar area ongkir terisi otomatis.
                   </AlertDescription>
                 </Alert>
               )}

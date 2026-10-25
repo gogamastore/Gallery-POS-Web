@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ChevronRight, Loader2, Package, ShoppingCart, Star } from "lucide-react";
 import { useCart } from "@/hooks/use-cart";
 import { useToast } from "@/hooks/use-toast";
+import { formatSold } from "@/lib/utils";
 import type { AppLayout, ProductCardStyle } from "@/components/app-builder/schema";
 
 /**
@@ -29,6 +30,7 @@ export interface CatalogProduct {
   discountPrice?: string;
   ratingAvg?: number;
   ratingCount?: number;
+  soldCount?: number;
 }
 
 const rupiahFormat = new Intl.NumberFormat("id-ID", {
@@ -163,6 +165,11 @@ function CatalogCard({
               <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
               <span className="font-semibold">{(p.ratingAvg ?? 0).toFixed(1)}</span>
               <span>({p.ratingCount})</span>
+            </div>
+          )}
+          {style.showSold && (p.soldCount ?? 0) > 0 && (
+            <div className={`text-[11px] text-gray-500 ${isSimple ? "text-center" : ""}`}>
+              {formatSold(p.soldCount ?? 0)} terjual
             </div>
           )}
           {style.showStock && (

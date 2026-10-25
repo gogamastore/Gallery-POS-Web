@@ -9,6 +9,7 @@ import { ShoppingCart, Loader2, Star } from "lucide-react";
 import { useCart } from "@/hooks/use-cart";
 import { useToast } from "@/hooks/use-toast";
 import { useAppLayout } from "@/components/storefront-builder/use-app-layout";
+import { formatSold } from "@/lib/utils";
 import Link from "next/link";
 
 interface Product {
@@ -23,6 +24,7 @@ interface Product {
   discountPrice?: string;
   ratingAvg?: number;
   ratingCount?: number;
+  soldCount?: number;
 }
 
 const formatCurrency = (value: string | number): string => {
@@ -40,6 +42,7 @@ export default function ProductCard({ product, showStockProgress = false }: { pr
   // Rating ditampilkan sesuai toggle "Tampilkan Rating" di App Builder (katalog).
   const { layout } = useAppLayout();
   const showRating = layout.catalog.card.showRating && (product.ratingCount ?? 0) > 0;
+  const showSold = layout.catalog.card.showSold && (product.soldCount ?? 0) > 0;
 
   const handleAddToCart = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
@@ -89,6 +92,9 @@ export default function ProductCard({ product, showStockProgress = false }: { pr
               <span className="font-semibold text-foreground">{(product.ratingAvg ?? 0).toFixed(1)}</span>
               <span>({product.ratingCount})</span>
             </div>
+          )}
+          {showSold && (
+            <div className="mt-0.5 text-xs text-muted-foreground">{formatSold(product.soldCount ?? 0)} terjual</div>
           )}
           <div className="mt-2">
             {product.isPromo && (
