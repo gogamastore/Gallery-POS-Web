@@ -105,6 +105,9 @@ interface Order {
   kasir?: string;
   /** Metode pembayaran pembeli: cash / bank_transfer / qris / midtrans / cod. */
   paymentMethod?: string;
+  /** Diskon voucher belanja (angka positif = potongan). Mengurangi laba. */
+  voucherDiscount?: number;
+  voucherCode?: string | null;
   products: OrderProduct[];
 }
 
@@ -536,6 +539,7 @@ function OrderDetailDialog({ orderId, onOrderUpdated, isOwner }: { orderId: stri
                 total,
                 subtotal: data.subtotal || 0,
                 shippingFee: data.shippingFee || 0,
+                voucherDiscount: typeof data.voucherDiscount === 'number' ? data.voucherDiscount : 0,
                 date: toIsoString(data.date),
                 validatedAt: toIsoString(data.validatedAt) || toIsoString(data.date),
                 products: productsWithModal,
@@ -604,10 +608,11 @@ function OrderDetailDialog({ orderId, onOrderUpdated, isOwner }: { orderId: stri
 
   const orderProfit = useMemo(() => {
     if (!order) return 0;
-    return order.products.reduce((total, p) => {
-        const productProfit = (p.price - (p.purchasePrice || 0)) * p.quantity;
-        return total + productProfit;
+    const productProfit = order.products.reduce((total, p) => {
+        return total + (p.price - (p.purchasePrice || 0)) * p.quantity;
     }, 0);
+    // Voucher diskon mengurangi laba (potongan ditanggung penjual).
+    return productProfit - (order.voucherDiscount || 0);
   }, [order]);
 
   return (
@@ -676,11 +681,19 @@ function OrderDetailDialog({ orderId, onOrderUpdated, isOwner }: { orderId: stri
               <div className="space-y-2 text-right text-sm">
                 <p>Subtotal Produk: <span className="font-medium">{formatCurrency(order.subtotal)}</span></p>
                 <p>Biaya Pengiriman: <span className="font-medium">{formatCurrency(order.shippingFee)}</span></p>
+                {(order.voucherDiscount || 0) > 0 && (
+                  <p>Voucher Diskon{order.voucherCode ? ` (${order.voucherCode})` : ''}: <span className="font-medium text-destructive">- {formatCurrency(order.voucherDiscount || 0)}</span></p>
+                )}
                 <p className="font-bold text-base border-t pt-2 mt-2">Total: <span className="text-primary">{formatCurrency(order.total)}</span></p>
                 {isOwner && (
-                    <div className="flex items-center justify-end gap-2 pt-1">
-                        <TrendingUp className="h-4 w-4 text-primary" />
-                        <p className="font-bold text-primary">Total Keuntungan Pesanan: {formatCurrency(orderProfit)}</p>
+                    <div className="flex flex-col items-end gap-0.5 pt-1">
+                        <div className="flex items-center gap-2">
+                            <TrendingUp className="h-4 w-4 text-primary" />
+                            <p className="font-bold text-primary">Total Keuntungan Pesanan: {formatCurrency(orderProfit)}</p>
+                        </div>
+                        {(order.voucherDiscount || 0) > 0 && (
+                          <p className="text-xs text-muted-foreground">Sudah dikurangi voucher diskon {formatCurrency(order.voucherDiscount || 0)}</p>
+                        )}
                     </div>
                 )}
               </div>
@@ -784,12 +797,13 @@ export default function SalesReportPage() {
               }
           });
 
-          return { 
-              id: orderDoc.id, 
-              ...data, 
+          return {
+              id: orderDoc.id,
+              ...data,
               total,
               subtotal: data.subtotal || 0,
               shippingFee: data.shippingFee || 0,
+              voucherDiscount: typeof data.voucherDiscount === 'number' ? data.voucherDiscount : 0,
               products: productsWithCogs,
               date: toIsoString(data.date),
               validatedAt: toIsoString(data.validatedAt) || toIsoString(data.date),
@@ -843,12 +857,14 @@ export default function SalesReportPage() {
         return acc + orderCogs;
     }, 0);
 
-    // Keuntungan HANYA dari penjualan produk (harga jual - modal) × qty.
+    // Keuntungan HANYA dari penjualan produk (harga jual - modal) × qty,
+    // DIKURANGI voucher diskon (potongan ditanggung penjual).
     // Biaya admin, biaya layanan, biaya layanan pembayaran, & ongkir TIDAK
     // dihitung sebagai keuntungan (bukan margin produk).
     const productRevenue = validOrders.reduce((acc, order) =>
         acc + order.products.reduce((sum, p) => sum + (p.price * p.quantity), 0), 0);
-    const profit = productRevenue - cogs;
+    const voucherTotal = validOrders.reduce((acc, order) => acc + (order.voucherDiscount || 0), 0);
+    const profit = productRevenue - cogs - voucherTotal;
     
     const chartDataProcessed = processSalesDataForChart(validOrders);
     
@@ -976,7 +992,7 @@ export default function SalesReportPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{formatCurrency(grossProfit)}</div>
-            <p className="text-xs text-muted-foreground">Subtotal Produk - Total HPP (tanpa biaya admin/layanan &amp; ongkir)</p>
+            <p className="text-xs text-muted-foreground">Subtotal Produk - Total HPP - Voucher Diskon (tanpa biaya admin/layanan &amp; ongkir)</p>
           </CardContent>
         </Card>
         )}
@@ -1040,7 +1056,7 @@ export default function SalesReportPage() {
                             ? 'Diproses'
                             : order.status;
 
-                        const orderProfit = order.products.reduce((sum, p) => sum + ((p.price - (p.purchasePrice || 0)) * p.quantity), 0);
+                        const orderProfit = order.products.reduce((sum, p) => sum + ((p.price - (p.purchasePrice || 0)) * p.quantity), 0) - (order.voucherDiscount || 0);
 
                         return (
                             <TableRow key={order.id}>

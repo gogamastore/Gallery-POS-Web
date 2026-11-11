@@ -44,12 +44,8 @@ import Image from "next/image";
 import { format } from "date-fns";
 import { id as localeId } from "date-fns/locale";
 import { sendChatMessage } from "@/lib/chat";
-import {
-  fetchAdminContact,
-  openAdminWhatsapp,
-  orderChatMessage,
-  orderWhatsappMessage,
-} from "@/lib/contact-admin";
+import { orderChatMessage, orderWhatsappMessage } from "@/lib/contact-admin";
+import { ContactAdminDialog } from "@/components/reseller/contact-admin-dialog";
 import type { Order } from "../page";
 import ShippingTracking from "@/components/orders/shipping-tracking";
 
@@ -314,24 +310,6 @@ export default function OrderDetailPage() {
     }
   }
 
-  async function handleContactWhatsapp() {
-    const info = orderChatInfo();
-    if (!info || contactBusy) return;
-    setContactBusy(true);
-    try {
-      const admin = await fetchAdminContact();
-      if (!admin) {
-        toast({ variant: "destructive", title: "Kontak admin belum tersedia." });
-        return;
-      }
-      openAdminWhatsapp(admin, orderWhatsappMessage(info, admin.name));
-      setContactOpen(false);
-    } catch {
-      toast({ variant: "destructive", title: "Gagal memuat kontak admin." });
-    } finally {
-      setContactBusy(false);
-    }
-  }
 
   // ── Guards ─────────────────────────────────────────────────────
 
@@ -543,51 +521,17 @@ export default function OrderDetailPage() {
 
       {/* ── Dialogs ── */}
 
-      {/* Hubungi Admin: pilih Obrolan atau WhatsApp */}
-      <Dialog open={contactOpen} onOpenChange={setContactOpen}>
-        <DialogContent className="max-w-xs">
-          <DialogHeader>
-            <DialogTitle>Hubungi Admin</DialogTitle>
-            <DialogDescription>
-              Pilih cara menghubungi admin tentang pesanan #{order.id.substring(0, 8).toUpperCase()}.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Button
-              variant="outline"
-              className="w-full justify-start h-12"
-              onClick={handleContactChat}
-              disabled={contactBusy}
-            >
-              {contactBusy ? (
-                <Loader2 className="mr-3 h-5 w-5 animate-spin" />
-              ) : (
-                <MessageSquare className="mr-3 h-5 w-5 text-primary" />
-              )}
-              <div className="text-left">
-                <p className="font-medium leading-none">Obrolan</p>
-                <p className="text-xs text-muted-foreground mt-0.5">Chat di aplikasi + riwayat pesanan</p>
-              </div>
-            </Button>
-            <Button
-              variant="outline"
-              className="w-full justify-start h-12"
-              onClick={handleContactWhatsapp}
-              disabled={contactBusy}
-            >
-              {contactBusy ? (
-                <Loader2 className="mr-3 h-5 w-5 animate-spin" />
-              ) : (
-                <Phone className="mr-3 h-5 w-5 text-green-600" />
-              )}
-              <div className="text-left">
-                <p className="font-medium leading-none">WhatsApp</p>
-                <p className="text-xs text-muted-foreground mt-0.5">Chat admin via WhatsApp</p>
-              </div>
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Hubungi Admin: Obrolan + daftar kontak WhatsApp (whatsapp_contacts) */}
+      <ContactAdminDialog
+        open={contactOpen}
+        onOpenChange={setContactOpen}
+        description={`Pilih cara menghubungi admin tentang pesanan #${order.id.substring(0, 8).toUpperCase()}.`}
+        onChat={handleContactChat}
+        buildWhatsappMessage={(name) => {
+          const info = orderChatInfo();
+          return info ? orderWhatsappMessage(info, name) : "";
+        }}
+      />
 
       {/* Pembayaran Kadaluarsa */}
       <AlertDialog open={expiredDialogOpen} onOpenChange={setExpiredDialogOpen}>

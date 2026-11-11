@@ -20,7 +20,9 @@ import {
   Truck,
   Contact,
   Star,
+  Store,
   CreditCard,
+  BadgePercent,
   Bell,
   SquarePen,
 } from "lucide-react";
@@ -33,7 +35,8 @@ import React from "react";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/dashboard/orders", label: "Pesanan", icon: ShoppingCart },
+  { href: "/dashboard/orders", label: "Pesanan Marketplace", icon: ShoppingCart },
+  { href: "/dashboard/pos-orders", label: "Pesanan POS", icon: Store },
   { href: "/dashboard/chat", label: "Chat", icon: MessageSquare },
   { href: "/dashboard/products", label: "Manajemen Produk", icon: Package },
   { href: "/dashboard/stock-management", label: "Manajemen Stok", icon: Warehouse },
@@ -50,6 +53,7 @@ const reportsSubMenu = [
   { href: "/dashboard/reports/shipping-fees", label: "Biaya Pengiriman" },
   { href: "/dashboard/reports/product-sales", label: "Penjualan Produk" },
   { href: "/dashboard/reports/purchases", label: "Pembelian" },
+  { href: "/dashboard/reports/stock-adjustments", label: "Penyesuaian Stok" },
   { href: "/dashboard/reports/operational-expenses", label: "Beban Operasional" },
   { href: "/dashboard/reports/stock-flow", label: "Arus Stok" },
   { href: "/dashboard/reports/receivables", label: "Piutang Usaha" },
@@ -93,6 +97,12 @@ const settingsSubMenu = [
     href: "/dashboard/settings/notification-popup",
     label: "Notifikasi",
     icon: Bell,
+    highlight: true,
+  },
+  {
+    href: "/dashboard/settings/flash-sale",
+    label: "Flash Sale",
+    icon: BadgePercent ,
     highlight: true,
   },
   {

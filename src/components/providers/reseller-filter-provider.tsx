@@ -8,6 +8,9 @@ interface FilterContextType {
   setSearchTerm: (term: string) => void;
   category: string;
   setCategory: (category: string) => void;
+  // Mode tampilan katalog (grid/list). Dibagi dengan toggle di app bar.
+  viewMode: "grid" | "list";
+  setViewMode: (mode: "grid" | "list") => void;
 }
 
 export const FilterContext = createContext<FilterContextType | undefined>(undefined);
@@ -15,12 +18,15 @@ export const FilterContext = createContext<FilterContextType | undefined>(undefi
 export const FilterProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [category, setCategory] = useState("Semua");
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
 
   const value = {
     searchTerm,
     setSearchTerm,
     category,
     setCategory,
+    viewMode,
+    setViewMode,
   };
 
   return (

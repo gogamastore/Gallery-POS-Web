@@ -3,11 +3,13 @@
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { PanelLeft, ShoppingCart, User, Archive, MessageSquare, Search } from "lucide-react"
+import { PanelLeft, ShoppingCart, User, Archive, MessageSquare, Search, LayoutGrid, List } from "lucide-react"
 import Link from "next/link"
 import { useCart } from "@/hooks/use-cart"
 import { Badge } from "@/components/ui/badge"
 import { useAuth } from "@/hooks/use-auth"
+import { generalWhatsappMessage } from "@/lib/contact-admin"
+import { ContactAdminDialog } from "@/components/reseller/contact-admin-dialog"
 import { useResellerFilters } from "@/components/providers/reseller-filter-provider"
 import { usePathname, useRouter } from "next/navigation"
 import { doc, onSnapshot } from "firebase/firestore"
@@ -40,10 +42,17 @@ export default function ResellerHeader({ onToggleSidebar }: { onToggleSidebar?: 
     const { user, signOut } = useAuth();
     const router = useRouter();
     const pathname = usePathname();
-    const { searchTerm, setSearchTerm } = useResellerFilters();
+    const { searchTerm, setSearchTerm, viewMode, setViewMode } = useResellerFilters();
     const { layout, hasConfig } = useAppLayout();
     const [isMounted, setIsMounted] = useState(false);
     const [chatUnread, setChatUnread] = useState(0);
+    const [contactOpen, setContactOpen] = useState(false);
+
+    // Obrolan: buka chat aplikasi (daftar WhatsApp ditangani ContactAdminDialog).
+    const handleHeaderChat = () => {
+        setContactOpen(false);
+        router.push("/reseller/chat");
+    };
 
     // Warna app bar mengikuti App Builder (settings/app_layout). Bila belum ada
     // layout yang di-Publish, pakai warna tema bawaan (bg-primary).
@@ -55,6 +64,9 @@ export default function ResellerHeader({ onToggleSidebar }: { onToggleSidebar?: 
     // Kotak pencarian hanya tampil di Katalog Produk, dan karena berada di
     // dalam header yang sticky, ia tidak ikut ter-scroll bersama daftar produk.
     const showSearch = pathname === "/reseller/catalog" || pathname === "/reseller/products";
+    // Toggle grid/list hanya di Katalog (seperti app bar aplikasi Flutter).
+    // Halaman Produk masih punya toggle sendiri di filter-nya.
+    const showViewToggle = pathname === "/reseller/catalog";
 
     useEffect(() => {
         setIsMounted(true);
@@ -157,6 +169,37 @@ export default function ResellerHeader({ onToggleSidebar }: { onToggleSidebar?: 
         </div>
     );
 
+    // Toggle grid/list di app bar, di samping kotak pencarian (meniru tampilan
+    // app bar aplikasi Flutter). Kotak putih agar kontras di atas warna app bar.
+    const viewToggle = (
+        <div className="flex h-10 shrink-0 items-center rounded-full bg-white p-1">
+            <button
+                type="button"
+                onClick={() => setViewMode("grid")}
+                aria-label="Tampilan grid"
+                aria-pressed={viewMode === "grid"}
+                className={cn(
+                    "flex h-8 w-8 items-center justify-center rounded-full transition-colors",
+                    viewMode === "grid" ? "bg-primary text-primary-foreground" : "text-muted-foreground",
+                )}
+            >
+                <LayoutGrid className="h-4 w-4" />
+            </button>
+            <button
+                type="button"
+                onClick={() => setViewMode("list")}
+                aria-label="Tampilan daftar"
+                aria-pressed={viewMode === "list"}
+                className={cn(
+                    "flex h-8 w-8 items-center justify-center rounded-full transition-colors",
+                    viewMode === "list" ? "bg-primary text-primary-foreground" : "text-muted-foreground",
+                )}
+            >
+                <List className="h-4 w-4" />
+            </button>
+        </div>
+    );
+
     return (
         <header
           className={cn("sticky top-0 z-40", !useCustomBar && "bg-primary text-primary-foreground")}
@@ -181,8 +224,9 @@ export default function ResellerHeader({ onToggleSidebar }: { onToggleSidebar?: 
             {/* Layar sedang ke atas: pencarian duduk sebaris dengan logo,
                 dibatasi lebarnya supaya tidak melebar memenuhi app bar. */}
             {showSearch && (
-              <div className="hidden sm:flex w-full max-w-xs items-center">
-                {searchBox}
+              <div className="hidden sm:flex w-full max-w-sm items-center gap-2">
+                <div className="flex-1">{searchBox}</div>
+                {showViewToggle && viewToggle}
               </div>
             )}
             <div className="flex items-center gap-1 sm:gap-2">
@@ -194,13 +238,11 @@ export default function ResellerHeader({ onToggleSidebar }: { onToggleSidebar?: 
                     <ShoppingCart className="h-5 w-5" />
                 </Link>
               </Button>
-              <Button variant="ghost" size="icon" className={iconButtonClass} asChild>
-                <Link href="/reseller/chat" className="relative">
+              <Button variant="ghost" size="icon" className={cn(iconButtonClass, "relative")} onClick={() => setContactOpen(true)} aria-label="Hubungi admin">
                     {isMounted && chatUnread > 0 && (
                          <Badge className={badgeClass}>{chatUnread}</Badge>
                     )}
                     <MessageSquare className="h-5 w-5" />
-                </Link>
               </Button>
                <Button variant="ghost" size="icon" className={iconButtonClass} asChild>
                 <Link href="/reseller/orders">
@@ -213,11 +255,20 @@ export default function ResellerHeader({ onToggleSidebar }: { onToggleSidebar?: 
           {/* Layar kecil: pencarian pindah ke baris kedua agar logo dan
               ikon tidak berdesakan — tetap di dalam header yang sticky. */}
           {showSearch && (
-            <div className="sm:hidden pb-3">
-              {searchBox}
+            <div className="sm:hidden flex items-center gap-2 pb-3">
+              <div className="flex-1">{searchBox}</div>
+              {showViewToggle && viewToggle}
             </div>
           )}
         </div>
+
+        {/* Hubungi Admin: Obrolan + daftar kontak WhatsApp (whatsapp_contacts). */}
+        <ContactAdminDialog
+          open={contactOpen}
+          onOpenChange={setContactOpen}
+          onChat={handleHeaderChat}
+          buildWhatsappMessage={generalWhatsappMessage}
+        />
       </header>
     )
 }

@@ -68,6 +68,12 @@ const reportCards = [
     href: "/dashboard/reports/stock-flow",
   },
   {
+    title: "Laporan Penyesuaian Stok",
+    description: "Riwayat penyesuaian stok manual (kasir/admin) beserta alasannya.",
+    icon: Package,
+    href: "/dashboard/reports/stock-adjustments",
+  },
+  {
     title: "Laporan Piutang Usaha",
     description: "Lacak pesanan yang belum dibayar.",
     icon: FileWarning,

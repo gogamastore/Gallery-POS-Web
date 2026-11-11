@@ -1,9 +1,9 @@
 "use client";
 
 /* eslint-disable @next/next/no-img-element */
-import { createContext, useContext, useEffect } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import Link from "next/link";
-import { ChevronRight, Loader2, Package, Search, ShoppingBag, Star, Store } from "lucide-react";
+import { ChevronRight, Loader2, Package, Search, ShoppingBag, Star, Store, Zap } from "lucide-react";
 import { cn, formatSold } from "@/lib/utils";
 import {
   CATEGORY_SLIDER_MAX,
@@ -13,6 +13,7 @@ import {
   type BrandsBlockConfig,
   type ButtonBlockConfig,
   type CategoriesBlockConfig,
+  type FlashSaleBlockConfig,
   type HomeBlock,
   type ImageBlockConfig,
   type ProductBlockConfig,
@@ -21,6 +22,8 @@ import {
   type SpacerBlockConfig,
   type TextBlockConfig,
 } from "@/components/app-builder/schema";
+import { useFlashSale } from "@/components/app-builder/use-flash-sale";
+import { censorPrice } from "@/lib/flash-sale";
 import {
   prepareProducts,
   useSourceProducts,
@@ -260,7 +263,9 @@ function productGridStyle(cfg: ProductBlockConfig): React.CSSProperties {
       case "largeCard":
         return 280;
       case "grid":
-        return Math.max(90, Math.round(380 / clamp(cfg.gridColumns, 1, 6)));
+        // Referensi 340 (bukan 380) agar jumlah kolom pilihan admin tetap muat
+        // di ponsel meski ada sedikit margin ke pinggir.
+        return Math.max(90, Math.round(340 / clamp(cfg.gridColumns, 1, 6)));
       case "staggered":
       case "quilted":
         return 160;
@@ -339,17 +344,25 @@ function ProductsBlock({ block }: { block: HomeBlock<"products"> }) {
   if (!list.length) return null; // sembunyikan blok kosong (sama seperti app)
 
   const pad = block.style.paddingH;
+  // Jarak tepi efektif untuk baris gulir horizontal: minimal 12px (sama dengan
+  // pratinjau) agar kartu tak pernah menempel ke pinggir walau paddingH kecil/0.
+  const edge = Math.max(pad, 12);
 
   // Carousel & largeCard → gulir horizontal; lainnya → grid responsif.
   if (cfg.layout === "carousel" || cfg.layout === "largeCard") {
     return (
       <Frame block={block} seeAllHref={productSeeAllLink(cfg)}>
-        <div className="flex snap-x gap-3 overflow-x-auto pb-1" style={{ padding: `0 ${pad}px`, scrollbarWidth: "none" }}>
+        <div className="flex snap-x gap-3 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
+          {/* Jarak kiri & kanan lewat ELEMEN spacer, bukan padding — iOS Safari
+              sering mengabaikan padding pada kontainer scroll horizontal
+              sehingga kartu menempel ke pinggir. gap-3 = 12px. */}
+          <div aria-hidden className="shrink-0" style={{ width: Math.max(0, edge - 12) }} />
           {list.map((p) => (
             <div key={p.id} className="w-[62%] shrink-0 snap-start sm:w-64">
               <ProductCard p={p} style={cfg.card} />
             </div>
           ))}
+          <div aria-hidden className="shrink-0" style={{ width: Math.max(0, edge - 12) }} />
         </div>
       </Frame>
     );
@@ -391,7 +404,10 @@ function ProductsBlock({ block }: { block: HomeBlock<"products"> }) {
     for (let j = 0; j * rows < list.length; j++) columns.push(list.slice(j * rows, j * rows + rows));
     return (
       <Frame block={block} seeAllHref={productSeeAllLink(cfg)}>
-        <div className="flex snap-x overflow-x-auto pb-1" style={{ padding: `0 ${pad}px`, gap, scrollbarWidth: "none" }}>
+        <div className="flex snap-x overflow-x-auto pb-1" style={{ gap, scrollbarWidth: "none" }}>
+          {/* Jarak kiri & kanan lewat ELEMEN spacer, bukan padding — iOS Safari
+              sering mengabaikan padding pada kontainer scroll horizontal. */}
+          <div aria-hidden className="shrink-0" style={{ width: Math.max(0, edge - gap) }} />
           {columns.map((col, j) => (
             <div
               key={j}
@@ -403,6 +419,7 @@ function ProductsBlock({ block }: { block: HomeBlock<"products"> }) {
               ))}
             </div>
           ))}
+          <div aria-hidden className="shrink-0" style={{ width: Math.max(0, edge - gap) }} />
         </div>
       </Frame>
     );
@@ -427,6 +444,161 @@ function ProductsBlock({ block }: { block: HomeBlock<"products"> }) {
             ))}
           </div>
         )}
+      </div>
+    </Frame>
+  );
+}
+
+// ── Blok Flash Sale ──────────────────────────────────────────────────
+function pad2(n: number) {
+  return n.toString().padStart(2, "0");
+}
+
+function Countdown({ target, label }: { target: Date; label: string }) {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => tick((x) => x + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const ms = Math.max(0, target.getTime() - Date.now());
+  const totalSec = Math.floor(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  const cell = (v: string) => (
+    <span className="rounded bg-black/80 px-1.5 py-0.5 text-xs font-bold tabular-nums text-white">{v}</span>
+  );
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-[11px] font-semibold text-gray-600">{label}</span>
+      <div className="flex items-center gap-1">
+        {cell(pad2(h))}
+        <span className="text-xs font-bold">:</span>
+        {cell(pad2(m))}
+        <span className="text-xs font-bold">:</span>
+        {cell(pad2(s))}
+      </div>
+    </div>
+  );
+}
+
+function FlashSaleCard({
+  p,
+  flashPrice,
+  censored,
+  style,
+}: {
+  p: PreviewProduct;
+  flashPrice: number;
+  censored: boolean;
+  style: ProductCardStyle;
+}) {
+  const t = useTheme();
+  const out = p.stock <= 0;
+  const normal = p.price;
+  const percent = normal > 0 && flashPrice > 0 ? Math.round((1 - flashPrice / normal) * 100) : 0;
+
+  return (
+    <Link
+      href={`/reseller/products/${p.id}`}
+      className="flex h-full flex-col overflow-hidden bg-white transition-transform hover:-translate-y-0.5"
+      style={{ borderRadius: style.radius, boxShadow: shadowCss(style) }}
+    >
+      <div
+        className="relative w-full overflow-hidden"
+        style={{ aspectRatio: String(style.imageRatio || 1), background: "#f3f4f6" }}
+      >
+        {p.image ? (
+          <img src={p.image} alt={p.name} loading="lazy" className="absolute inset-0 h-full w-full" style={{ objectFit: style.imageFit }} />
+        ) : (
+          <Package className="absolute left-1/2 top-1/2 h-7 w-7 -translate-x-1/2 -translate-y-1/2 text-gray-300" />
+        )}
+        {out && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-xs font-bold text-white">Stok Habis</div>
+        )}
+        {censored ? (
+          <span className="absolute left-1.5 top-1.5 rounded-md bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+            SEGERA
+          </span>
+        ) : (
+          percent > 0 &&
+          style.showDiscountBadge && (
+            <span className="absolute left-1.5 top-1.5 rounded-md bg-red-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
+              -{percent}%
+            </span>
+          )
+        )}
+      </div>
+      <div className="flex flex-1 flex-col gap-0.5 p-2">
+        {style.showTitle && (
+          <div
+            className="font-semibold leading-tight"
+            style={{ fontSize: 13, display: "-webkit-box", WebkitLineClamp: style.titleMaxLines, WebkitBoxOrient: "vertical", overflow: "hidden" }}
+          >
+            {p.name}
+          </div>
+        )}
+        <div className="mt-auto pt-1">
+          {censored ? (
+            <div className="truncate text-sm font-bold blur-[1px]" style={{ color: t.price }}>
+              {censorPrice(flashPrice)}
+            </div>
+          ) : (
+            <>
+              {percent > 0 && <div className="truncate text-[11px] text-gray-400 line-through">{rupiah(normal)}</div>}
+              <div className="truncate text-sm font-bold" style={{ color: t.price }}>{rupiah(flashPrice)}</div>
+            </>
+          )}
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+function FlashSaleBlock({ block }: { block: HomeBlock<"flashSale"> }) {
+  const cfg: FlashSaleBlockConfig = block.config;
+  const { loading, event, status, products, flashPrices } = useFlashSale();
+
+  // Sembunyikan blok bila tidak ada event aktif/teaser (atau masih memuat).
+  if (loading || !event || !status) return null;
+  const list = products.slice(0, cfg.limit);
+  if (!list.length) return null;
+
+  const censored = status === "teaser";
+  const minW = Math.max(90, Math.round(340 / clamp(cfg.gridColumns, 1, 6)));
+  const pad = block.style.paddingH;
+
+  return (
+    <Frame block={block}>
+      <div style={{ padding: `0 ${pad}px` }}>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-gradient-to-r from-rose-500/10 to-amber-500/10 px-3 py-2">
+          <div className="flex items-center gap-1.5 font-bold text-rose-600">
+            <Zap className="h-4 w-4 fill-rose-500 text-rose-500" />
+            <span className="truncate">{event.title}</span>
+          </div>
+          {cfg.showCountdown &&
+            (censored ? (
+              <Countdown target={event.startAt} label="Mulai dalam" />
+            ) : (
+              <Countdown target={event.endAt} label="Berakhir dalam" />
+            ))}
+        </div>
+        {censored && (
+          <p className="mb-2 text-[11px] text-amber-700">
+            Flash sale segera dimulai — Hanya Bisa Membeli 1 Produk Flash Sale.
+          </p>
+        )}
+        <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${minW}px, 1fr))`, gap: 8 }}>
+          {list.map((p) => (
+            <FlashSaleCard
+              key={p.id}
+              p={p}
+              flashPrice={flashPrices[p.id] ?? p.price}
+              censored={censored}
+              style={cfg.card}
+            />
+          ))}
+        </div>
       </div>
     </Frame>
   );
@@ -819,6 +991,8 @@ function BlockView({ block, data }: { block: HomeBlock; data: PreviewData }) {
   switch (block.type) {
     case "products":
       return <ProductsBlock block={block as HomeBlock<"products">} />;
+    case "flashSale":
+      return <FlashSaleBlock block={block as HomeBlock<"flashSale">} />;
     case "banner":
       return <BannerBlock block={block as HomeBlock<"banner">} data={data} />;
     case "brands":

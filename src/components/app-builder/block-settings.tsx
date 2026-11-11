@@ -539,6 +539,34 @@ function ContentSettings({ block, onChange, data }: { block: HomeBlock; onChange
     case "products":
       body = <ProductsSettings block={block as HomeBlock<"products">} set={set} data={data} />;
       break;
+    case "flashSale": {
+      const c = (block as HomeBlock<"flashSale">).config;
+      const setCard = (patch: Partial<ProductCardStyle>) => set({ card: { ...c.card, ...patch } });
+      body = (
+        <>
+          <Section title="Flash Sale">
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              Blok ini otomatis menampilkan event yang sedang berlangsung atau
+              teaser (harga tersensor) secara realtime. Atur event & produknya di{" "}
+              <Link href="/dashboard/settings/flash-sale" className="underline">
+                Pengaturan Flash Sale
+              </Link>
+              . Jika tidak ada event aktif/teaser, blok tersembunyi otomatis.
+            </p>
+            <SliderField label="Jumlah Kolom" value={c.gridColumns} min={1} max={4} onChange={(gridColumns) => set({ gridColumns })} />
+            <SliderField label="Jumlah Produk Maks." value={c.limit} min={1} max={50} onChange={(limit) => set({ limit })} />
+            <SwitchField
+              label="Tampilkan Hitung Mundur"
+              hint="Mundur ke waktu mulai (teaser) atau ke berakhir (aktif)."
+              checked={c.showCountdown}
+              onChange={(showCountdown) => set({ showCountdown })}
+            />
+          </Section>
+          <CardSettings card={c.card} onChange={setCard} />
+        </>
+      );
+      break;
+    }
     case "banner": {
       const c = (block as HomeBlock<"banner">).config;
       body = (

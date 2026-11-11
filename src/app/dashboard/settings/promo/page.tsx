@@ -43,6 +43,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { useToast } from '@/hooks/use-toast';
@@ -69,6 +70,8 @@ interface Promotion extends Product {
     discountPrice: number;
     startDate: Date;
     endDate: Date;
+    // Batas maksimal pembelian per pesanan (online). 1 = batasi 1 pcs; null = bebas.
+    maxQtyPerBuyer?: number | null;
 }
 
 const formatCurrency = (amount: number | string) => {
@@ -155,7 +158,7 @@ function ProductSelectionDialog({ onProductSelect }: { onProductSelect: (product
                             ) : filteredProducts.map(p => (
                                 <TableRow key={p.id}>
                                     <TableCell className="font-medium flex items-center gap-2">
-                                        <Image src={p.image} alt={p.name} width={40} height={40} className="rounded-md object-cover"/>
+                                        <Image src={p.image || 'https://placehold.co/40x40.png'} alt={p.name} width={40} height={40} className="rounded-md object-cover"/>
                                         {p.name}
                                     </TableCell>
                                     <TableCell>{p.sku}</TableCell>
@@ -185,14 +188,16 @@ export default function PromoSettingsPage() {
 
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [discountPrice, setDiscountPrice] = useState<number>(0);
+  const [limitOnePcs, setLimitOnePcs] = useState(false);
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
     from: new Date(),
     to: addDays(new Date(), 7),
   });
-  
+
   const resetForm = () => {
     setSelectedProduct(null);
     setDiscountPrice(0);
+    setLimitOnePcs(false);
     setDateRange({ from: new Date(), to: addDays(new Date(), 7) });
   };
 
@@ -216,7 +221,8 @@ export default function PromoSettingsPage() {
                 promoId: doc.id,
                 discountPrice: data.discountPrice,
                 startDate: data.startDate.toDate(),
-                endDate: data.endDate.toDate()
+                endDate: data.endDate.toDate(),
+                maxQtyPerBuyer: data.maxQtyPerBuyer ?? null
             } as Promotion;
         }).filter(p => p !== null) as Promotion[];
         
@@ -246,6 +252,8 @@ export default function PromoSettingsPage() {
             discountPrice: discountPrice,
             startDate: dateRange.from,
             endDate: dateRange.to,
+            // Batas 1 pcs per pesanan (online) bila toggle aktif.
+            maxQtyPerBuyer: limitOnePcs ? 1 : null,
             createdAt: serverTimestamp()
         });
         toast({ title: "Promo berhasil ditambahkan" });
@@ -307,7 +315,7 @@ export default function PromoSettingsPage() {
                     <div className="flex items-center gap-4 rounded-md border p-2">
                         {selectedProduct ? (
                             <div className='flex items-center gap-3 flex-1'>
-                                <Image src={selectedProduct.image} alt={selectedProduct.name} width={40} height={40} className="rounded-sm"/>
+                                <Image src={selectedProduct.image || 'https://placehold.co/40x40.png'} alt={selectedProduct.name} width={40} height={40} className="rounded-sm"/>
                                 <div>
                                     <p className="font-semibold">{selectedProduct.name}</p>
                                     <p className="text-xs text-muted-foreground">{formatCurrency(selectedProduct.price)}</p>
@@ -322,6 +330,13 @@ export default function PromoSettingsPage() {
                  <div className="space-y-2">
                   <Label htmlFor="discountPrice">Harga Diskon (Rp)</Label>
                   <Input id="discountPrice" type="number" value={discountPrice} onChange={(e) => setDiscountPrice(Number(e.target.value))} />
+                </div>
+                <div className="flex items-center justify-between rounded-md border p-3">
+                  <div className="space-y-0.5 pr-4">
+                    <Label htmlFor="limitOnePcs">Maksimal pembelian 1 pcs</Label>
+                    <p className="text-xs text-muted-foreground">Jika aktif, pembeli online hanya bisa membeli 1 pcs produk promo ini per pesanan.</p>
+                  </div>
+                  <Switch id="limitOnePcs" checked={limitOnePcs} onCheckedChange={setLimitOnePcs} />
                 </div>
                 <div className="space-y-2">
                      <Label>Periode Promo</Label>
@@ -377,7 +392,7 @@ export default function PromoSettingsPage() {
               {promotions.map((promo) => (
                 <div key={promo.promoId} className="flex items-center justify-between rounded-lg border p-4">
                   <div className="flex items-center gap-4">
-                    <Image src={promo.image} alt={promo.name} width={64} height={64} className="rounded-md object-cover"/>
+                    <Image src={promo.image || 'https://placehold.co/64x64.png'} alt={promo.name} width={64} height={64} className="rounded-md object-cover"/>
                     <div>
                       <p className="font-bold">{promo.name}</p>
                       <div className="flex items-center gap-2">
@@ -387,6 +402,9 @@ export default function PromoSettingsPage() {
                       <p className='text-xs text-muted-foreground'>
                         Berlaku hingga: {format(new Date(promo.endDate), 'dd MMM yyyy')}
                       </p>
+                      {promo.maxQtyPerBuyer === 1 && (
+                        <Badge variant="outline" className="mt-1 text-[10px] font-normal">Maks 1 pcs / pesanan</Badge>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">

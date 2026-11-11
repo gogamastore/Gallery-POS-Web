@@ -29,6 +29,7 @@ interface Product {
   description?: string;
   isPromo?: boolean;
   discountPrice?: string;
+  purchaseAt?: Timestamp; // waktu terakhir dibeli/restock (untuk urutan katalog)
 }
 
 interface Promotion {
@@ -100,7 +101,19 @@ export default function BrandProductsPage() {
             return product;
         });
 
-        setProducts(finalProducts);
+        // Urutan sama seperti katalog (product-grid): produk habis (stok 0)
+        // selalu di paling belakang, sisanya purchaseAt TERBARU dulu, lalu abjad.
+        const stockRank = (p: Product) => (p.stock > 0 ? 0 : 1);
+        const purchaseMs = (p: Product) => (p.purchaseAt ? p.purchaseAt.toMillis() : 0);
+        const sorted = [...finalProducts].sort((a, b) => {
+            const byStock = stockRank(a) - stockRank(b);
+            if (byStock !== 0) return byStock;
+            const byPurchase = purchaseMs(b) - purchaseMs(a);
+            if (byPurchase !== 0) return byPurchase;
+            return a.name.localeCompare(b.name);
+        });
+
+        setProducts(sorted);
 
     } catch (error) {
       console.error("Failed to fetch brand products:", error);

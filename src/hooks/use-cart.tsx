@@ -6,6 +6,7 @@ import { useAuth } from './use-auth';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, writeBatch, deleteDoc, onSnapshot, getDoc, query, where, documentId, Timestamp, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useToast } from './use-toast';
+import { flashSaleFromDoc, type FlashSale } from '@/lib/flash-sale';
 
 interface Product {
   id: string;
@@ -48,6 +49,24 @@ interface Promotion {
     discountPrice: number;
     startDate: Timestamp;
     endDate: Timestamp;
+    // 1 = produk promo dibatasi maksimal 1 pcs per pesanan (online).
+    maxQtyPerBuyer?: number;
+}
+
+// Ringkasan event flash sale yang SEDANG aktif (hanya 1 event boleh aktif).
+interface FlashActive {
+    flashPrices: Map<string, number>; // productId → harga flash
+    productIds: Set<string>;          // semua produk dalam event aktif
+    oneItemPerEvent: boolean;         // hanya 1 produk & 1 pcs se-event
+    maxQtyPerBuyer: number | null;    // batas pcs per produk (null = bebas)
+}
+
+// Batas qty untuk produk dalam flash sale aktif: 1 bila "1 produk per event",
+// selain itu maxQtyPerBuyer, selain itu null (tanpa batas / bukan produk flash).
+function flashCapFor(id: string, f: FlashActive): number | null {
+    if (!f.flashPrices.has(id)) return null;
+    if (f.oneItemPerEvent) return 1;
+    return f.maxQtyPerBuyer ?? null;
 }
 
 
@@ -60,25 +79,75 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // Cache produk (per sesi) agar tidak fetch ulang tiap keranjang berubah.
   const productCacheRef = useRef<Map<string, Product>>(new Map());
   // Cache promosi ber-TTL agar tidak query promosi setiap snapshot.
-  const promoCacheRef = useRef<{ map: Map<string, number>; expires: number } | null>(null);
+  const promoCacheRef = useRef<{ discounts: Map<string, number>; maxOne: Set<string>; expires: number } | null>(null);
+  // Cache flash sale aktif ber-TTL (pendek agar harga cepat kembali normal saat berakhir).
+  const flashCacheRef = useRef<{ data: FlashActive; expires: number } | null>(null);
+  // Dokumen keranjang terakhir dari snapshot — dipakai untuk menghitung ulang
+  // harga secara berkala (flash sale yang berakhir → harga kembali normal).
+  const lastDocsRef = useRef<{ id: string; quantity: number }[]>([]);
 
   // Ambil promosi aktif; hasil di-cache selama 60 detik.
-  const getActivePromos = useCallback(async (): Promise<Map<string, number>> => {
+  // `discounts` = productId → harga diskon; `maxOne` = produk promo yang
+  // dibatasi maksimal 1 pcs per pesanan (maxQtyPerBuyer==1).
+  const getActivePromos = useCallback(async (): Promise<{ discounts: Map<string, number>; maxOne: Set<string> }> => {
     const cached = promoCacheRef.current;
-    if (cached && cached.expires > Date.now()) return cached.map;
+    if (cached && cached.expires > Date.now()) {
+      return { discounts: cached.discounts, maxOne: cached.maxOne };
+    }
 
     const now = new Date();
     const promoQuery = query(collection(db, "promotions"), where("endDate", ">", now));
     const promoSnapshot = await getDocs(promoQuery);
-    const map = new Map<string, number>();
+    const discounts = new Map<string, number>();
+    const maxOne = new Set<string>();
     promoSnapshot.forEach((d) => {
       const data = d.data() as Promotion;
       if (data.startDate.toDate() <= now) {
-        map.set(data.productId, data.discountPrice);
+        discounts.set(data.productId, data.discountPrice);
+        if (data.maxQtyPerBuyer === 1) maxOne.add(data.productId);
       }
     });
-    promoCacheRef.current = { map, expires: Date.now() + 60_000 };
-    return map;
+    promoCacheRef.current = { discounts, maxOne, expires: Date.now() + 60_000 };
+    return { discounts, maxOne };
+  }, []);
+
+  // Ambil event flash sale yang SEDANG aktif (startAt <= now < endAt). Hanya 1
+  // event boleh aktif. Hasil di-cache 15 detik agar harga cepat kembali normal
+  // begitu event berakhir. Teaser (cooldown) TIDAK memberi harga flash — teaser
+  // hanya tampilan tersensor di beranda, bukan harga beli.
+  const getActiveFlashSale = useCallback(async (): Promise<FlashActive> => {
+    const cached = flashCacheRef.current;
+    if (cached && cached.expires > Date.now()) return cached.data;
+
+    const now = new Date();
+    const snap = await getDocs(query(collection(db, "flash_sales"), where("endAt", ">", now)));
+    let chosen: FlashSale | null = null;
+    snap.forEach((d) => {
+      const fs = flashSaleFromDoc(d.id, d.data());
+      if (fs.startAt <= now && now < fs.endAt) {
+        if (!chosen || fs.startAt > chosen.startAt) chosen = fs;
+      }
+    });
+
+    const flashPrices = new Map<string, number>();
+    const productIds = new Set<string>();
+    const active = chosen as FlashSale | null;
+    if (active) {
+      active.products.forEach((p) => {
+        if (p.flashPrice > 0) {
+          flashPrices.set(p.productId, p.flashPrice);
+          productIds.add(p.productId);
+        }
+      });
+    }
+    const data: FlashActive = {
+      flashPrices,
+      productIds,
+      oneItemPerEvent: active?.oneItemPerEvent ?? false,
+      maxQtyPerBuyer: active?.maxQtyPerBuyer ?? null,
+    };
+    flashCacheRef.current = { data, expires: Date.now() + 15_000 };
+    return data;
   }, []);
 
   // Ambil produk yang BELUM ada di cache, dalam batch `documentId() in`
@@ -99,6 +168,48 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, []);
 
+  // Bangun daftar keranjang (harga final + batas qty) dari dokumen keranjang.
+  // Dipakai oleh listener snapshot DAN timer berkala (agar harga flash kembali
+  // normal saat event berakhir walau keranjang tidak berubah).
+  const buildCart = useCallback(async (docs: { id: string; quantity: number }[]) => {
+    const ids = docs.map((d) => d.id);
+    const [promos, flash] = await Promise.all([
+      getActivePromos(),
+      getActiveFlashSale(),
+    ]);
+    await fetchMissingProducts(ids);
+
+    const cache = productCacheRef.current;
+    const cartItems = docs
+      .map((cd) => {
+        const productData = cache.get(cd.id);
+        if (!productData) return null;
+
+        // Presedensi harga: flash sale aktif > promo > harga normal.
+        // Di luar jendela aktif, flash.flashPrices kosong → harga normal lagi.
+        let finalPrice = parseCurrency(productData.price);
+        if (promos.discounts.has(cd.id)) finalPrice = promos.discounts.get(cd.id)!;
+        if (flash.flashPrices.has(cd.id)) finalPrice = flash.flashPrices.get(cd.id)!;
+
+        // Batas tampil qty: promo 1 pcs, lalu batas flash sale (1 / maxQty).
+        let qty = Number(cd.quantity) || 0;
+        if (promos.maxOne.has(cd.id) && qty > 1) qty = 1;
+        const fcap = flashCapFor(cd.id, flash);
+        if (fcap != null && qty > fcap) qty = fcap;
+
+        return {
+          ...productData,
+          id: cd.id,
+          quantity: qty,
+          finalPrice,
+          price: productData.price,
+        } as CartItem;
+      })
+      .filter((item): item is CartItem => item !== null);
+
+    setCart(cartItems);
+  }, [getActivePromos, getActiveFlashSale, fetchMissingProducts]);
+
   // Subscribe to cart changes in Firestore
   useEffect(() => {
     if (user) {
@@ -107,35 +218,9 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       const unsubscribe = onSnapshot(cartRef, async (snapshot) => {
         try {
-            const ids = snapshot.docs.map((d) => d.id);
-            const [activePromos] = await Promise.all([
-              getActivePromos(),
-              fetchMissingProducts(ids),
-            ]);
-
-            const cache = productCacheRef.current;
-            const cartItems = snapshot.docs
-              .map((cartDoc) => {
-                const productData = cache.get(cartDoc.id);
-                if (!productData) return null;
-
-                let finalPrice = parseCurrency(productData.price);
-                if (activePromos.has(cartDoc.id)) {
-                  finalPrice = activePromos.get(cartDoc.id)!;
-                }
-
-                return {
-                  ...productData,
-                  id: cartDoc.id,
-                  quantity: cartDoc.data().quantity,
-                  finalPrice,
-                  price: productData.price,
-                } as CartItem;
-              })
-              .filter((item): item is CartItem => item !== null);
-
-            setCart(cartItems);
-
+            const docs = snapshot.docs.map((d) => ({ id: d.id, quantity: Number(d.data().quantity) || 0 }));
+            lastDocsRef.current = docs;
+            await buildCart(docs);
         } catch (error) {
              console.error("Error processing cart and promotions:", error);
              toast({ variant: "destructive", title: "Gagal memuat keranjang dengan promo" });
@@ -151,10 +236,21 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return () => unsubscribe();
     } else {
       // If no user, clear the cart and stop loading
+      lastDocsRef.current = [];
       setCart([]);
       setLoading(false);
     }
-  }, [user, toast, getActivePromos, fetchMissingProducts]);
+  }, [user, toast, buildCart]);
+
+  // Hitung ulang harga tiap 20 detik agar harga flash sale kembali normal
+  // otomatis begitu event berakhir, meski isi keranjang tidak berubah.
+  useEffect(() => {
+    if (!user) return;
+    const t = setInterval(() => {
+      if (lastDocsRef.current.length > 0) buildCart(lastDocsRef.current).catch(() => {});
+    }, 20_000);
+    return () => clearInterval(t);
+  }, [user, buildCart]);
 
   const addToCart = async (product: Product, quantity: number = 1) => {
     if (!user) {
@@ -177,16 +273,51 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     
     try {
         const docSnap = await getDoc(cartRef);
-        const newQuantity = docSnap.exists() ? docSnap.data().quantity + quantity : quantity;
+        let newQuantity = docSnap.exists() ? docSnap.data().quantity + quantity : quantity;
+
+        // Batas 1 pcs per pesanan untuk produk promo (maxQtyPerBuyer==1).
+        const { maxOne } = await getActivePromos();
+        if (maxOne.has(product.id) && newQuantity > 1) {
+            newQuantity = 1;
+            toast({ title: 'Promo maksimal 1 pcs', description: 'Produk promo ini dibatasi 1 pcs per pesanan.' });
+        }
+
+        // Aturan flash sale aktif.
+        const flash = await getActiveFlashSale();
+        if (flash.flashPrices.has(product.id)) {
+            // "Hanya 1 produk per event": tolak jika sudah ada produk flash lain.
+            if (flash.oneItemPerEvent) {
+                const other = cart.find((it) => it.id !== product.id && flash.productIds.has(it.id));
+                if (other) {
+                    toast({
+                        variant: 'destructive',
+                        title: 'Hanya 1 produk flash sale',
+                        description: `Anda sudah memilih "${other.name}" dari flash sale ini. Hapus dulu untuk memilih produk lain.`,
+                    });
+                    return;
+                }
+            }
+            const cap = flashCapFor(product.id, flash);
+            if (cap != null && newQuantity > cap) {
+                newQuantity = cap;
+                toast({
+                    title: 'Batas flash sale',
+                    description: cap === 1
+                        ? 'Produk flash sale ini dibatasi maksimal 1 pcs.'
+                        : `Produk flash sale ini dibatasi maksimal ${cap} pcs.`,
+                });
+            }
+        }
 
         if (newQuantity > product.stock) {
             toast({ variant: 'destructive', title: 'Stok tidak mencukupi' });
             return;
         }
 
-        const finalPrice = (product.isPromo && product.discountPrice)
+        let finalPrice = (product.isPromo && product.discountPrice)
             ? parseCurrency(product.discountPrice)
             : parseCurrency(product.price);
+        if (flash.flashPrices.has(product.id)) finalPrice = flash.flashPrices.get(product.id)!;
 
         const dataToSave = {
             product_id: product.id,
@@ -223,6 +354,25 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       await removeFromCart(productId);
       return;
     }
+    // Batas 1 pcs per pesanan untuk produk promo (maxQtyPerBuyer==1).
+    let targetQty = quantity;
+    const { maxOne } = await getActivePromos();
+    if (maxOne.has(productId) && targetQty > 1) {
+      targetQty = 1;
+      toast({ title: 'Promo maksimal 1 pcs', description: 'Produk promo ini dibatasi 1 pcs per pesanan.' });
+    }
+    // Batas qty produk flash sale aktif (1 / maxQtyPerBuyer).
+    const flash = await getActiveFlashSale();
+    const fcap = flashCapFor(productId, flash);
+    if (fcap != null && targetQty > fcap) {
+      targetQty = fcap;
+      toast({
+        title: 'Batas flash sale',
+        description: fcap === 1
+          ? 'Produk flash sale ini dibatasi maksimal 1 pcs.'
+          : `Produk flash sale ini dibatasi maksimal ${fcap} pcs.`,
+      });
+    }
     const cartRef = doc(db, 'user', user.uid, 'cart', productId);
     try {
         // Here we need to check the stock limit before updating
@@ -230,14 +380,14 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const productSnap = await getDoc(productRef);
         if (productSnap.exists()) {
             const productStock = productSnap.data().stock || 0;
-            if (quantity > productStock) {
+            if (targetQty > productStock) {
                 toast({ variant: 'destructive', title: 'Stok tidak mencukupi', description: `Sisa stok: ${productStock}` });
                 // Revert to max stock if user tries to exceed
                 await setDoc(cartRef, { quantity: productStock, updated_at: serverTimestamp() }, { merge: true });
                 return;
             }
         }
-        await setDoc(cartRef, { quantity: quantity, updated_at: serverTimestamp() }, { merge: true });
+        await setDoc(cartRef, { quantity: targetQty, updated_at: serverTimestamp() }, { merge: true });
     } catch (error) {
         console.error("Error updating quantity:", error);
         toast({ variant: 'destructive', title: 'Gagal memperbarui jumlah' });

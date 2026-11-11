@@ -28,6 +28,7 @@ import {
   Trash2,
   Type,
   Undo2,
+  Zap,
   type LucideIcon,
 } from "lucide-react";
 import { db } from "@/lib/firebase";
@@ -58,6 +59,7 @@ const BLOCK_ICONS: Record<BlockType, LucideIcon> = {
   categories: LayoutGrid,
   parentCategories: Layers,
   products: ShoppingBag,
+  flashSale: Zap,
   search: Search,
   text: Type,
   image: ImageIcon,
@@ -65,7 +67,7 @@ const BLOCK_ICONS: Record<BlockType, LucideIcon> = {
   button: MousePointerClick,
 };
 
-const ADDABLE: BlockType[] = ["products", "banner", "categories", "parentCategories", "brands", "search", "image", "text", "button", "spacer"];
+const ADDABLE: BlockType[] = ["products", "flashSale", "banner", "categories", "parentCategories", "brands", "search", "image", "text", "button", "spacer"];
 
 // Firestore menolak `undefined`; JSON round-trip sekaligus membuat salinan bersih.
 const toFirestore = (layout: AppLayout) => JSON.parse(JSON.stringify(layout)) as AppLayout;

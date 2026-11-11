@@ -16,6 +16,7 @@ import {
   Star,
   Store,
   User,
+  Zap,
 } from "lucide-react";
 import { cn, formatSold } from "@/lib/utils";
 import {
@@ -677,6 +678,49 @@ function ProductsBlock({ block }: { block: HomeBlock<"products"> }) {
   );
 }
 
+function FlashSaleBlock({ block }: { block: HomeBlock<"flashSale"> }) {
+  const cfg = block.config;
+  const cols = clamp(cfg.gridColumns, 1, 4);
+  return (
+    <Frame block={block}>
+      <div style={{ padding: `0 ${block.style.paddingH}px` }}>
+        <div
+          className="mb-2 flex items-center justify-between gap-2 rounded-lg px-3 py-2"
+          style={{ background: "linear-gradient(90deg, rgba(244,63,94,.12), rgba(245,158,11,.12))" }}
+        >
+          <div className="flex items-center gap-1.5" style={{ color: "#e11d48", fontWeight: 700, fontSize: 13 }}>
+            <Zap className="h-4 w-4" style={{ fill: "#f43f5e", color: "#f43f5e" }} />
+            <span className="truncate">{block.title.trim() || "Flash Sale"}</span>
+          </div>
+          {cfg.showCountdown && (
+            <div className="flex items-center gap-1">
+              {["00", "00", "00"].map((v, i) => (
+                <span key={i} className="rounded bg-black/80 px-1.5 py-0.5 text-[11px] font-bold text-white">
+                  {v}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0,1fr))` }}>
+          {range(cols).map((i) => (
+            <div key={i} className="overflow-hidden rounded-lg bg-white shadow">
+              <div className="w-full" style={{ aspectRatio: "1", background: "#f3f4f6" }} />
+              <div className="p-2">
+                <div className="h-2 w-3/4 rounded bg-gray-200" />
+                <div className="mt-1.5 h-3 w-1/2 rounded" style={{ background: "#fecdd3" }} />
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-2 text-center text-[10px] text-gray-500">
+          Contoh — di aplikasi menampilkan event aktif/teaser secara realtime
+        </div>
+      </div>
+    </Frame>
+  );
+}
+
 function BannerBlock({ block, data }: { block: HomeBlock<"banner">; data: PreviewData }) {
   const t = useTheme();
   const c: BannerBlockConfig = block.config;
@@ -1049,6 +1093,8 @@ function BlockPreview({ block, data }: { block: HomeBlock; data: PreviewData }) 
   switch (block.type) {
     case "products":
       return <ProductsBlock block={block as HomeBlock<"products">} />;
+    case "flashSale":
+      return <FlashSaleBlock block={block as HomeBlock<"flashSale">} />;
     case "banner":
       return <BannerBlock block={block as HomeBlock<"banner">} data={data} />;
     case "brands":

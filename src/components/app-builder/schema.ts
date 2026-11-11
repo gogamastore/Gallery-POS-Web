@@ -15,6 +15,7 @@ export type BlockType =
   | "categories"
   | "parentCategories"
   | "products"
+  | "flashSale"
   | "search"
   | "text"
   | "image"
@@ -161,6 +162,18 @@ export interface ParentCategoriesBlockConfig {
   showInCatalog: boolean;
 }
 
+/** Blok "Flash Sale" — menampilkan event dari koleksi `flash_sales` secara
+ *  REALTIME. Tak perlu memilih event: blok otomatis menampilkan event yang
+ *  sedang aktif, atau teaser (cooldown) dengan harga tersensor bila belum mulai,
+ *  dan menghilang saat tidak ada event. */
+export interface FlashSaleBlockConfig {
+  gridColumns: number;
+  limit: number;
+  /** Tampilkan hitung mundur (ke mulai saat teaser / ke berakhir saat aktif). */
+  showCountdown: boolean;
+  card: ProductCardStyle;
+}
+
 export interface SearchBlockConfig {
   placeholder: string;
   radius: number;
@@ -211,6 +224,7 @@ export interface BlockConfigMap {
   categories: CategoriesBlockConfig;
   parentCategories: ParentCategoriesBlockConfig;
   products: ProductBlockConfig;
+  flashSale: FlashSaleBlockConfig;
   search: SearchBlockConfig;
   text: TextBlockConfig;
   image: ImageBlockConfig;
@@ -326,6 +340,12 @@ export const DEFAULT_CONFIGS: BlockConfigMap = {
     autoSlide: false,
     card: DEFAULT_CARD,
   },
+  flashSale: {
+    gridColumns: 3,
+    limit: 12,
+    showCountdown: true,
+    card: { ...DEFAULT_CARD, showStock: false, showCategory: false },
+  },
   search: {
     placeholder: "Cari produk...",
     radius: 10,
@@ -417,6 +437,11 @@ export function createBlock(type: BlockType): HomeBlock {
       return block(id, type, {
         title: "Produk Pilihan",
         showSeeAll: true,
+        style: { marginTop: 16, paddingH: 16 },
+      });
+    case "flashSale":
+      return block(id, type, {
+        title: "Flash Sale",
         style: { marginTop: 16, paddingH: 16 },
       });
     case "categories":
@@ -521,6 +546,7 @@ export const BLOCK_LABELS: Record<BlockType, { label: string; description: strin
   categories: { label: "Kategori", description: "Chip / ikon kategori produk" },
   parentCategories: { label: "Induk Kategori", description: "Kelompok kategori; klik → sub-kategori. Bisa sticky di app bar" },
   products: { label: "Produk", description: "Daftar produk dengan banyak gaya layout" },
+  flashSale: { label: "Flash Sale", description: "Event flash sale berjadwal (realtime) + teaser harga tersensor" },
   search: { label: "Kotak Pencarian", description: "Membuka katalog untuk mencari produk" },
   text: { label: "Teks", description: "Judul atau paragraf bebas" },
   image: { label: "Gambar", description: "Gambar promosi dengan link" },

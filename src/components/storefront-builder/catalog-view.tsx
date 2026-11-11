@@ -190,11 +190,12 @@ function CatalogCard({
                   type="button"
                   onClick={add}
                   disabled={cartLoading}
-                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white disabled:opacity-60"
+                  className="flex h-7 shrink-0 items-center justify-center gap-1 rounded-full px-2.5 text-[11px] font-semibold text-white disabled:opacity-60"
                   style={{ background: theme.button }}
                   aria-label="Tambah ke keranjang"
                 >
-                  {cartLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShoppingCart className="h-4 w-4" />}
+                  {cartLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShoppingCart className="h-3.5 w-3.5" />}
+                  <span>Tambah</span>
                 </button>
               )}
             </div>
@@ -262,8 +263,10 @@ export function CatalogProductsView({ products, layout }: { products: CatalogPro
     );
   }
 
-  // grid (default) → responsif; kolom bertambah otomatis di layar lebar
-  const minW = Math.max(90, Math.round(380 / clamp(cfg.gridColumns || 2, 1, 6)));
+  // grid (default) → responsif; kolom bertambah otomatis di layar lebar.
+  // Referensi 340 (bukan 380) agar jumlah kolom pilihan admin tetap muat di
+  // ponsel meski ada sedikit margin ke pinggir.
+  const minW = Math.max(90, Math.round(340 / clamp(cfg.gridColumns || 2, 1, 6)));
   return (
     <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${minW}px, 1fr))`, gap }}>
       {products.map((p) => (

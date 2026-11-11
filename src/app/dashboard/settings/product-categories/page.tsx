@@ -453,6 +453,22 @@ export default function ProductCategoriesPage() {
     fetchParents();
   }, []);
 
+  // ── Radix workaround: bersihkan lock body yang tertinggal ─────────
+  // Saat menyimpan edit kategori/induk, baris berisi Dialog/AlertDialog
+  // ter-render ulang oleh refetch tepat ketika dialog menutup. Radix bisa
+  // meninggalkan `pointer-events: none` pada <body> → halaman "freeze"/tidak
+  // bisa diklik. Bersihkan bila tak ada dialog yang masih terbuka.
+  useEffect(() => {
+    if (document.body.style.pointerEvents !== "none") return;
+    const t = setTimeout(() => {
+      const hasOpenOverlay = document.querySelector(
+        '[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"], [role="menu"][data-state="open"]'
+      );
+      if (!hasOpenOverlay) document.body.style.pointerEvents = "";
+    }, 120);
+    return () => clearTimeout(t);
+  }, [categories, parents]);
+
   const handleDeleteParent = async (id: string, name: string) => {
     try {
       await deleteDoc(doc(db, 'category_parents', id));

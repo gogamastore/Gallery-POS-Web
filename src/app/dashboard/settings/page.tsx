@@ -24,6 +24,7 @@ import {
   Smartphone,
   Truck,
   CreditCard,
+  Zap,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -98,9 +99,16 @@ const settingsCards = [
   },
   {
     title: "Promo",
-    description: "Buat dan kelola diskon produk atau flash sale.",
+    description: "Buat dan kelola diskon produk berdasarkan rentang tanggal.",
     icon: Percent,
     href: "/dashboard/settings/promo",
+  },
+  {
+    title: "Flash Sale",
+    description: "Buat event flash sale berjadwal (tanggal + jam) yang muncul di beranda reseller.",
+    icon: Zap,
+    href: "/dashboard/settings/flash-sale",
+    highlight: true,
   },
   {
     title: "Produk Trending",

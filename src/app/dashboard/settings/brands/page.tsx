@@ -196,6 +196,22 @@ export default function BrandsPage() {
     fetchBrands();
   }, []);
 
+  // ── Radix workaround: bersihkan lock body yang tertinggal ─────────
+  // Saat menyimpan edit brand, baris berisi Dialog/AlertDialog ter-render
+  // ulang oleh refetch tepat ketika dialog menutup. Radix bisa meninggalkan
+  // `pointer-events: none` pada <body> → halaman "freeze"/tidak bisa diklik.
+  // Bersihkan bila tak ada dialog yang masih terbuka.
+  useEffect(() => {
+    if (document.body.style.pointerEvents !== "none") return;
+    const t = setTimeout(() => {
+      const hasOpenOverlay = document.querySelector(
+        '[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"], [role="menu"][data-state="open"]'
+      );
+      if (!hasOpenOverlay) document.body.style.pointerEvents = "";
+    }, 120);
+    return () => clearTimeout(t);
+  }, [brands]);
+
   const handleDelete = async (id: string, name: string) => {
     try {
       await deleteDoc(doc(db, 'brands', id));
@@ -242,7 +258,13 @@ export default function BrandsPage() {
                   className="flex items-center justify-between rounded-lg border p-4"
                 >
                   <div className="flex items-center gap-4">
-                    <Image src={brand.logoUrl} alt={brand.name} width={40} height={40} className="rounded-md object-contain bg-muted p-1" />
+                    {brand.logoUrl ? (
+                      <Image src={brand.logoUrl} alt={brand.name} width={40} height={40} className="rounded-md object-contain bg-muted p-1" />
+                    ) : (
+                      <div className="flex h-10 w-10 items-center justify-center rounded-md bg-muted">
+                        <Building className="h-5 w-5 text-muted-foreground" />
+                      </div>
+                    )}
                     <p className="font-medium">{brand.name}</p>
                   </div>
                    <div className="flex items-center gap-2">

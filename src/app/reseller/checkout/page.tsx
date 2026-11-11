@@ -30,6 +30,7 @@ import {
   increment,
 } from "firebase/firestore";
 import { db, functions } from "@/lib/firebase";
+import { flashSaleFromDoc, flashSaleStatus, type FlashSale } from "@/lib/flash-sale";
 import { httpsCallable } from "firebase/functions";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
@@ -690,6 +691,47 @@ export default function CheckoutPage() {
     if (paymentMethod === "midtrans" && !selectedChannel) {
       toast({ title: "Pilih metode pembayaran", description: "Pilih Transfer Bank, E-wallet, atau QRIS.", variant: "destructive" });
       return;
+    }
+
+    // Validasi aturan Flash Sale (termasuk produk yang ditambahkan ke keranjang
+    // SEBELUM event aktif, agar tidak bisa mengelabui sistem).
+    try {
+      const now = new Date();
+      const fsSnap = await getDocs(query(collection(db, "flash_sales"), where("endAt", ">", now)));
+      let activeFs: FlashSale | null = null;
+      fsSnap.forEach((d) => {
+        const fs = flashSaleFromDoc(d.id, d.data());
+        if (flashSaleStatus(fs, now) === "active" && (!activeFs || fs.startAt > activeFs.startAt)) {
+          activeFs = fs;
+        }
+      });
+      if (activeFs) {
+        const ev = activeFs as FlashSale;
+        const flashItems = cart.filter((it) => ev.products.some((p) => p.productId === it.id));
+        if (ev.oneItemPerEvent && flashItems.length > 1) {
+          toast({
+            variant: "destructive",
+            title: "Hanya 1 produk flash sale",
+            description: `Flash sale "${ev.title}" hanya memperbolehkan 1 produk. Hapus produk flash sale lain di keranjang (${flashItems.map((i) => i.name).join(", ")}) hingga tersisa 1.`,
+          });
+          return;
+        }
+        const cap = ev.oneItemPerEvent ? 1 : ev.maxQtyPerBuyer ?? 0;
+        if (cap > 0) {
+          const over = flashItems.filter((it) => it.quantity > cap);
+          if (over.length > 0) {
+            toast({
+              variant: "destructive",
+              title: "Batas flash sale",
+              description: `Produk ${over.map((i) => i.name).join(", ")} melebihi batas ${cap} pcs. Kurangi jumlahnya untuk melanjutkan.`,
+            });
+            return;
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Gagal memvalidasi flash sale:", e);
+      // Jangan blokir keras bila validasi gagal (mis. offline) — lanjut checkout.
     }
 
     setIsProcessing(true);

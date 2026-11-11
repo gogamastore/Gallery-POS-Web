@@ -30,6 +30,18 @@ export async function fetchAdminContact(): Promise<AdminContact | null> {
   return { id: d.id, name: data.name ?? "Admin", whatsapp: data.whatsapp };
 }
 
+/** Ambil SEMUA kontak WhatsApp admin (urut createdAt) dari whatsapp_contacts. */
+export async function fetchAdminContacts(): Promise<AdminContact[]> {
+  const q = query(collection(db, "whatsapp_contacts"), orderBy("createdAt", "asc"));
+  const snap = await getDocs(q);
+  return snap.docs
+    .map((d) => {
+      const data = d.data() as { name?: string; whatsapp?: string };
+      return { id: d.id, name: data.name ?? "Admin", whatsapp: data.whatsapp ?? "" };
+    })
+    .filter((c) => c.whatsapp.trim().length > 0);
+}
+
 /** Buka WhatsApp admin dengan pesan yang sudah terisi otomatis. */
 export function openAdminWhatsapp(contact: AdminContact, text: string) {
   const num = contact.whatsapp.replace(/[^0-9]/g, "");
@@ -79,5 +91,24 @@ export function productChatMessage(p: { name: string; price: number; link: strin
     `🛍️ ${p.name}\n` +
     `💰 ${formatRp(p.price)}\n` +
     `🔗 ${p.link}`
+  );
+}
+
+/** Pesan umum untuk WhatsApp admin (tombol Hubungi di appbar, tanpa konteks). */
+export function generalWhatsappMessage(adminName: string): string {
+  return `Halo ${adminName}, saya ingin bertanya.\n\nYang ingin saya tanyakan: `;
+}
+
+/** Pesan produk untuk WhatsApp admin (opsi WhatsApp di detail produk). */
+export function productWhatsappMessage(
+  p: { name: string; price: number; link: string },
+  adminName: string
+): string {
+  return (
+    `Halo ${adminName}, saya ingin bertanya tentang produk ini:\n\n` +
+    `🛍️ ${p.name}\n` +
+    `💰 ${formatRp(p.price)}\n` +
+    `🔗 ${p.link}\n\n` +
+    `Yang ingin saya tanyakan: `
   );
 }

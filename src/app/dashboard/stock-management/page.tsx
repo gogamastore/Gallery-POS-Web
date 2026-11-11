@@ -67,7 +67,14 @@ interface Product {
   description?: string;
 }
 
-function AdjustStockDialog({ product, onStockAdjusted }: { product: Product, onStockAdjusted: () => void }) {
+// Opsi nama admin/kasir untuk dropdown "Disesuaikan oleh" (koleksi `user`,
+// role == 'admin') — sama seperti daftar nama di halaman validasi.
+interface StaffOption {
+  id: string;
+  name: string;
+}
+
+function AdjustStockDialog({ product, onStockAdjusted, admins }: { product: Product, onStockAdjusted: () => void, admins: StaffOption[] }) {
     const [isOpen, setIsOpen] = useState(false);
     const [loading, setLoading] = useState(false);
     const [adjustment, setAdjustment] = useState({
@@ -75,6 +82,9 @@ function AdjustStockDialog({ product, onStockAdjusted }: { product: Product, onS
         quantity: 0,
         reason: ''
     });
+    // Nama admin/kasir yang menyesuaikan — dipilih dari daftar (seperti halaman
+    // validasi). Menyimpan id dokumen user; namanya dicari saat simpan.
+    const [adjustedById, setAdjustedById] = useState<string>("");
     const { toast } = useToast();
 
     const handleAdjustStock = async () => {
@@ -82,6 +92,11 @@ function AdjustStockDialog({ product, onStockAdjusted }: { product: Product, onS
             toast({ variant: 'destructive', title: 'Data Tidak Lengkap', description: 'Jumlah dan alasan harus diisi.' });
             return;
         }
+        if (!adjustedById) {
+            toast({ variant: 'destructive', title: 'Nama Belum Dipilih', description: 'Pilih nama admin/kasir yang menyesuaikan.' });
+            return;
+        }
+        const adjustedByName = admins.find(a => a.id === adjustedById)?.name || "Admin";
         if (adjustment.type === 'out' && adjustment.quantity > product.stock) {
             toast({ variant: 'destructive', title: 'Stok Tidak Cukup', description: 'Jumlah penarikan stok melebihi stok yang tersedia.' });
             return;
@@ -109,6 +124,10 @@ function AdjustStockDialog({ product, onStockAdjusted }: { product: Product, onS
                 reason: adjustment.reason,
                 previousStock: product.stock,
                 newStock: newStock,
+                // Siapa yang menyesuaikan (kasir/admin, dipilih dari daftar) —
+                // tampil di Laporan Penyesuaian Stok.
+                adjustedBy: adjustedByName,
+                adjustedById: adjustedById,
                 createdAt: serverTimestamp()
             });
             
@@ -118,6 +137,7 @@ function AdjustStockDialog({ product, onStockAdjusted }: { product: Product, onS
             onStockAdjusted();
             setIsOpen(false);
             setAdjustment({ type: 'in', quantity: 0, reason: '' }); // Reset form
+            setAdjustedById("");
         } catch (error) {
             console.error("Error adjusting stock:", error);
             toast({ variant: 'destructive', title: 'Gagal Menyesuaikan Stok' });
@@ -154,6 +174,23 @@ function AdjustStockDialog({ product, onStockAdjusted }: { product: Product, onS
                      <div className="space-y-1">
                         <Label htmlFor="reason">Alasan Penyesuaian</Label>
                         <Textarea id="reason" placeholder="Contoh: Stok opname, barang rusak, retur..." value={adjustment.reason} onChange={e => setAdjustment(p => ({ ...p, reason: e.target.value }))} />
+                    </div>
+                     <div className="space-y-1">
+                        <Label htmlFor="adjustedBy">Disesuaikan oleh</Label>
+                        <Select value={adjustedById} onValueChange={setAdjustedById}>
+                            <SelectTrigger id="adjustedBy">
+                                <SelectValue placeholder="Pilih nama admin/kasir..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {admins.length === 0 ? (
+                                    <div className="px-2 py-1.5 text-sm text-muted-foreground">Tidak ada admin.</div>
+                                ) : (
+                                    admins.map((a) => (
+                                        <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                                    ))
+                                )}
+                            </SelectContent>
+                        </Select>
                     </div>
                 </div>
                 <DialogFooter>
@@ -199,6 +236,7 @@ function ImageViewer({ src, alt }: { src: string, alt: string }) {
 export default function StockManagementPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [lowStockProducts, setLowStockProducts] = useState<Product[]>([]);
+  const [admins, setAdmins] = useState<StaffOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'name', direction: 'asc' });
@@ -230,6 +268,25 @@ export default function StockManagementPage() {
   useEffect(() => {
     fetchProducts();
   }, [fetchProducts]);
+
+  // Daftar nama admin/kasir untuk dropdown "Disesuaikan oleh" (koleksi `user`,
+  // role == 'admin') — sumber yang sama dengan halaman validasi & staf.
+  useEffect(() => {
+    const fetchAdmins = async () => {
+      try {
+        const snap = await getDocs(query(collection(db, "user"), where("role", "==", "admin")));
+        setAdmins(
+          snap.docs
+            .map((d) => ({ id: d.id, name: (d.data().name ?? "").toString() }))
+            .filter((a) => a.name)
+            .sort((a, b) => a.name.localeCompare(b.name))
+        );
+      } catch (error) {
+        console.error("Error fetching admins:", error);
+      }
+    };
+    fetchAdmins();
+  }, []);
 
   const sortProducts = (productsToSort: Product[], config: { key: string; direction: string; }) => {
     return [...productsToSort].sort((a, b) => {
@@ -459,7 +516,7 @@ export default function StockManagementPage() {
                                           <Badge variant={product.stock === 0 ? "destructive" : "default"} className={cn({'bg-orange-500 text-white hover:bg-orange-500/80': product.stock > 0})}>{product.stock}</Badge>
                                         </TableCell>
                                         <TableCell className="text-right">
-                                            <AdjustStockDialog product={product} onStockAdjusted={fetchProducts} />
+                                            <AdjustStockDialog product={product} onStockAdjusted={fetchProducts} admins={admins} />
                                         </TableCell>
                                     </TableRow>
                                 )) : (
@@ -511,7 +568,7 @@ export default function StockManagementPage() {
                                         <TableCell className="hidden md:table-cell">{product.sku}</TableCell>
                                         <TableCell className="text-center font-bold">{product.stock}</TableCell>
                                         <TableCell className="text-right">
-                                            <AdjustStockDialog product={product} onStockAdjusted={fetchProducts} />
+                                            <AdjustStockDialog product={product} onStockAdjusted={fetchProducts} admins={admins} />
                                         </TableCell>
                                     </TableRow>
                                 ))}
